@@ -279,11 +279,18 @@ export async function parseStockXlsx(file: File): Promise<ParsedFile> {
   const sheetName = wb.SheetNames[0]
   const ws = wb.Sheets[sheetName]
   const arr = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: false })
-  // Find the human header row (contains "Kode Produk" + "Stok:..." columns)
+  // Find the human header row. Two valid Shopee export formats:
+  //  - Multi-cabang: contains "Kode Produk" + ≥1 column starting with "Stok:" (per-warehouse).
+  //  - Single warehouse: contains "Kode Produk" + a plain "Stok" column.
   let headerRow = -1
   for (let i = 0; i < Math.min(10, arr.length); i++) {
     const r = (arr[i] as unknown[]) ?? []
-    if (r.includes('Kode Produk') && r.some((c) => typeof c === 'string' && /^Stok:/i.test(c as string))) {
+    const hasKodeProduk = r.includes('Kode Produk')
+    if (!hasKodeProduk) continue
+    const hasStokCol = r.some(
+      (c) => typeof c === 'string' && (/^Stok:/i.test(c) || normalize(c) === 'stok'),
+    )
+    if (hasStokCol) {
       headerRow = i
       break
     }
@@ -296,6 +303,11 @@ export async function parseStockXlsx(file: File): Promise<ParsedFile> {
   headers.forEach((h, i) => {
     if (/^Stok:/i.test(h)) stokCols.push({ idx: i, name: h.replace(/^Stok:/i, '').trim() })
   })
+  // Single-warehouse fallback: no per-cabang columns, but a plain "Stok" column.
+  if (stokCols.length === 0) {
+    const idx = headers.findIndex((h) => normalize(h) === 'stok')
+    if (idx >= 0) stokCols.push({ idx, name: 'Toko' })
+  }
   const findCol = (...names: string[]) => {
     for (const n of names) {
       const i = headers.findIndex((h) => normalize(h) === normalize(n))
