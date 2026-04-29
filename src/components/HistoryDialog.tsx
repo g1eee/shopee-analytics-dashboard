@@ -61,6 +61,15 @@ export function HistoryDialog({
                     <div className="text-xs text-muted">
                       {new Date(h.uploadedAt).toLocaleString('id-ID')} · {h.rowCount} baris
                     </div>
+                    {(h.hasProduk !== undefined ||
+                      h.hasAds !== undefined ||
+                      h.hasStock !== undefined) && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        <FilePill label="Produk" present={!!h.hasProduk} />
+                        <FilePill label="Iklan" present={!!h.hasAds} />
+                        <FilePill label="Stok" present={!!h.hasStock} />
+                      </div>
+                    )}
                   </div>
                   <button
                     className="p-1.5 rounded-lg hover:bg-rose-500/10 text-muted hover:text-rose-400"
@@ -93,5 +102,20 @@ export function HistoryDialog({
         )}
       </div>
     </div>
+  )
+}
+
+function FilePill({ label, present }: { label: string; present: boolean }) {
+  return (
+    <span
+      className={
+        'inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium border ' +
+        (present
+          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+          : 'border-border bg-bg-elev text-muted line-through opacity-60')
+      }
+    >
+      {label}
+    </span>
   )
 }

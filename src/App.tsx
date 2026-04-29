@@ -143,6 +143,9 @@ export default function App() {
     rowCount:
       (d.produk?.length ?? 0) + (d.ads?.length ?? 0) + (d.stock?.length ?? 0),
     range: { start: d.period?.start ?? '', end: d.period?.end ?? '' },
+    hasProduk: (d.produk?.length ?? 0) > 0,
+    hasAds: (d.ads?.length ?? 0) > 0,
+    hasStock: (d.stock?.length ?? 0) > 0,
   }))
 
   const noData = state.datasets.length === 0
