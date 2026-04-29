@@ -83,6 +83,38 @@ export function SummaryView({ ds, prevDs }: Props) {
     return hasViews && !hasVisitors && !hasAtc
   }, [ds])
 
+  // Which file types are present in this dataset?
+  const availability = useMemo(
+    () => ({
+      produk: (ds.produk ?? []).length > 0,
+      ads: (ds.ads ?? []).length > 0,
+      stock: (ds.stock ?? []).length > 0,
+    }),
+    [ds],
+  )
+  const missingFiles = useMemo(() => {
+    const out: { key: 'produk' | 'ads' | 'stock'; label: string; hint: string }[] = []
+    if (!availability.produk)
+      out.push({
+        key: 'produk',
+        label: 'Performa Produk',
+        hint: 'parentskudetail*.xlsx (Shopee Seller Center → Performa)',
+      })
+    if (!availability.ads)
+      out.push({
+        key: 'ads',
+        label: 'Iklan',
+        hint: 'Data Keseluruhan Iklan Shopee*.csv (Shopee Ads → Laporan)',
+      })
+    if (!availability.stock)
+      out.push({
+        key: 'stock',
+        label: 'Stok',
+        hint: 'mass_update_sales_info*.xlsx (Mass Update Stok)',
+      })
+    return out
+  }, [availability])
+
   const tabs: { value: TabKey; label: string; icon: React.ReactNode }[] = [
     { value: 'global', label: 'Global', icon: <LayoutDashboard className="h-4 w-4" /> },
     { value: 'produk', label: 'Performa Produk', icon: <Package className="h-4 w-4" /> },
@@ -91,6 +123,28 @@ export function SummaryView({ ds, prevDs }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {missingFiles.length > 0 && (
+        <div className="rounded-2xl border border-sky-500/30 bg-sky-500/5 p-3 flex items-start gap-3">
+          <AlertTriangle className="h-4 w-4 text-sky-300 mt-0.5 shrink-0" />
+          <div className="text-sm flex-1 min-w-0">
+            <p className="text-white font-medium">
+              Dataset ini belum lengkap — {missingFiles.length} file belum di-upload
+            </p>
+            <ul className="text-xs text-muted mt-1 flex flex-col gap-0.5">
+              {missingFiles.map((m) => (
+                <li key={m.key}>
+                  <span className="text-sky-200 font-medium">{m.label}</span>{' '}
+                  <span className="text-muted">— {m.hint}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted mt-1.5">
+              Klik <span className="text-sky-200">Upload</span> di header → drop file yang kurang ke
+              periode &amp; brand yang sama. KPI yang relevan akan otomatis terisi.
+            </p>
+          </div>
+        </div>
+      )}
       {staleNoFunnel && (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-3">
           <AlertTriangle className="h-4 w-4 text-amber-300 mt-0.5 shrink-0" />
@@ -107,12 +161,20 @@ export function SummaryView({ ds, prevDs }: Props) {
         </div>
       )}
       <Tabs value={tab} onChange={(v) => setTab(v as TabKey)} items={tabs} />
-      {tab === 'global' && <GlobalTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} />}
-      {tab === 'produk' && <ProdukTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} />}
-      {tab === 'iklan' && <IklanTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} adAgg={adAgg} />}
+      {tab === 'global' && (
+        <GlobalTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} availability={availability} />
+      )}
+      {tab === 'produk' && (
+        <ProdukTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} availability={availability} />
+      )}
+      {tab === 'iklan' && (
+        <IklanTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} adAgg={adAgg} />
+      )}
     </div>
   )
 }
+
+type Availability = { produk: boolean; ads: boolean; stock: boolean }
 
 // ----- Helpers -----
 
@@ -135,11 +197,13 @@ function GlobalTab({
   prevKpi,
   skus,
   ds,
+  availability,
 }: {
   kpi: SummaryKpi
   prevKpi: SummaryKpi | null
   skus: SkuRow[]
   ds: RawDataset
+  availability: Availability
 }) {
   const top10 = useMemo(() => topByOmzet(skus, 10), [skus])
   const recs = useMemo(() => globalRecommendations(ds), [ds])
@@ -242,6 +306,11 @@ function GlobalTab({
         <SnapshotCard
           icon={<ShoppingCart className="h-4 w-4 text-emerald-300" />}
           title="Funnel Toko"
+          emptyMessage={
+            !availability.produk
+              ? 'Belum ada data Performa Produk untuk dataset ini. Upload file parentskudetail*.xlsx untuk mengisi funnel.'
+              : null
+          }
           rows={[
             { label: 'Tampilan', value: formatNumber(kpi.totalDilihat, { compact: true }) },
             { label: 'Pengunjung', value: formatNumber(kpi.totalPengunjung, { compact: true }) },
@@ -253,6 +322,11 @@ function GlobalTab({
         <SnapshotCard
           icon={<Gauge className="h-4 w-4 text-sky-300" />}
           title="Konversi Toko"
+          emptyMessage={
+            !availability.produk
+              ? 'Belum ada data Performa Produk untuk dataset ini. Upload file parentskudetail*.xlsx untuk menghitung CTR/CVR/AOV.'
+              : null
+          }
           rows={[
             { label: 'CTR', value: formatPercent(kpi.ctrToko, 2) },
             { label: 'CVR', value: formatPercent(kpi.cvrToko, 2) },
@@ -263,6 +337,11 @@ function GlobalTab({
         <SnapshotCard
           icon={<Boxes className="h-4 w-4 text-amber-300" />}
           title="Inventori"
+          emptyMessage={
+            !availability.stock
+              ? 'Belum ada data Stok untuk dataset ini. Upload file mass_update_sales_info*.xlsx untuk melihat Total SKU, SKU stok 0, dan availability variant.'
+              : null
+          }
           rows={[
             { label: 'Total SKU', value: formatNumber(kpi.totalSku) },
             { label: 'SKU stok 0', value: formatNumber(kpi.outOfStockSku) },
@@ -284,11 +363,13 @@ function ProdukTab({
   prevKpi,
   skus,
   ds,
+  availability,
 }: {
   kpi: SummaryKpi
   prevKpi: SummaryKpi | null
   skus: SkuRow[]
   ds: RawDataset
+  availability: Availability
 }) {
   const recs = useMemo(() => produkRecommendations(ds), [ds])
   const topCtr = useMemo(() => topByCtr(skus, 1000, 8), [skus])
@@ -372,7 +453,11 @@ function ProdukTab({
         title="Best-seller stok kritis"
         subtitle="5 SKU best-seller dengan stok ≤ 50 atau availability variant < 100%"
         items={stockAlerts}
-        empty="Semua best-seller stok aman & semua varian tersedia"
+        empty={
+          !availability.stock
+            ? 'Belum ada data Stok untuk dataset ini — upload mass_update_sales_info*.xlsx untuk mengaktifkan monitoring stok.'
+            : 'Semua best-seller stok aman & semua varian tersedia'
+        }
         renderMetric={(s) => (
           <div className="flex items-center gap-2">
             <span className="text-amber-300 font-semibold">{formatNumber(s.totalStock)}</span>
@@ -787,10 +872,12 @@ function SnapshotCard({
   icon,
   title,
   rows,
+  emptyMessage,
 }: {
   icon: React.ReactNode
   title: string
   rows: { label: string; value: string }[]
+  emptyMessage?: string | null
 }) {
   return (
     <div className="card p-4">
@@ -798,14 +885,18 @@ function SnapshotCard({
         {icon}
         <h3 className="text-sm font-semibold text-white">{title}</h3>
       </div>
-      <dl className="mt-3 flex flex-col gap-1.5">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between text-sm">
-            <dt className="text-muted">{r.label}</dt>
-            <dd className="text-white font-medium">{r.value}</dd>
-          </div>
-        ))}
-      </dl>
+      {emptyMessage ? (
+        <p className="mt-3 text-xs text-muted leading-relaxed">{emptyMessage}</p>
+      ) : (
+        <dl className="mt-3 flex flex-col gap-1.5">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-center justify-between text-sm">
+              <dt className="text-muted">{r.label}</dt>
+              <dd className="text-white font-medium">{r.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   )
 }

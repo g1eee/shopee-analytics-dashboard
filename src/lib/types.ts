@@ -24,6 +24,11 @@ export interface DatasetMeta {
   rowCount: number
   range: { start: string; end: string }
   source?: string
+  // Which raw file types were included when this dataset was uploaded.
+  // Optional so legacy v1 uses don't need to populate it.
+  hasProduk?: boolean
+  hasAds?: boolean
+  hasStock?: boolean
 }
 
 export interface Dataset {
