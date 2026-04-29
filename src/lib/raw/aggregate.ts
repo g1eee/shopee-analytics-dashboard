@@ -16,10 +16,14 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
   const pesanan = sum(parents.map((p) => p.pesananSiapDikirim))
   const dilihat = sum(parents.map((p) => p.jumlahProdukDilihat))
   const klik = sum(parents.map((p) => p.produkDiklik))
+  const atc = sum(parents.map((p) => p.ditambahKeKeranjang))
+  const pengunjung = sum(parents.map((p) => p.pengunjungKunjungan))
 
   const ads = ds.ads ?? []
   const adSpend = sum(ads.map((a) => a.biaya))
   const adOmzet = sum(ads.map((a) => a.omzet))
+  const adKlik = sum(ads.map((a) => a.klik))
+  const adKonversi = sum(ads.map((a) => a.konversi))
 
   const stock = ds.stock ?? []
   const totalSku = stock.length
@@ -36,6 +40,15 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
     acos: adOmzet > 0 ? (adSpend / adOmzet) * 100 : 0,
     totalSku,
     outOfStockSku,
+    totalDilihat: dilihat,
+    totalKlik: klik,
+    totalAtc: atc,
+    atcRateToko: pengunjung > 0 ? (atc / pengunjung) * 100 : 0,
+    totalPengunjung: pengunjung,
+    cpc: adKlik > 0 ? adSpend / adKlik : 0,
+    adKlik,
+    adKonversi,
+    adOmzet,
   }
 }
 
@@ -67,7 +80,6 @@ export function byAdType(ads: AdsRow[]): AdTypeAgg[] {
 }
 
 export function joinSkus(ds: RawDataset): SkuRow[] {
-  // Aggregate ads per kodeProduk
   const adsByKode = new Map<string, { spend: number; omzet: number; klik: number; count: number }>()
   for (const a of ds.ads ?? []) {
     if (!a.kodeProduk) continue
@@ -78,11 +90,9 @@ export function joinSkus(ds: RawDataset): SkuRow[] {
     cur.count += 1
     adsByKode.set(a.kodeProduk, cur)
   }
-  // Stock map
   const stockByKode = new Map<string, StockProduct>()
   for (const s of ds.stock ?? []) stockByKode.set(s.kodeProduk, s)
 
-  // Union of kode produk from produk + ads + stock
   const all = new Set<string>()
   ;(ds.produk ?? []).filter((p) => p.isParent).forEach((p) => all.add(p.kodeProduk))
   ;(ds.ads ?? []).forEach((a) => a.kodeProduk && all.add(a.kodeProduk))
@@ -100,8 +110,12 @@ export function joinSkus(ds: RawDataset): SkuRow[] {
     const s = stockByKode.get(kode)
     const omzet = p?.penjualanSiapDikirim ?? 0
     const pesanan = p?.pesananSiapDikirim ?? 0
+    const dilihat = p?.jumlahProdukDilihat ?? 0
+    const klik = p?.produkDiklik ?? 0
+    const atc = p?.ditambahKeKeranjang ?? 0
     const ctr = (p?.ctr ?? 0) * 100
     const cvr = (p?.cvrSiapDikirim ?? 0) * 100
+    const atcRate = (p?.atcRate ?? 0) * 100
     const adSpend = a?.spend ?? 0
     const adOmzet = a?.omzet ?? 0
     out.push({
@@ -111,9 +125,14 @@ export function joinSkus(ds: RawDataset): SkuRow[] {
       pesanan,
       ctr,
       cvr,
+      atcRate,
+      dilihat,
+      klik,
+      atc,
       adSpend,
       adOmzet,
       acos: adOmzet > 0 ? (adSpend / adOmzet) * 100 : adSpend > 0 ? Infinity : 0,
+      roas: adSpend > 0 ? adOmzet / adSpend : 0,
       totalStock: s?.totalStock ?? 0,
       variantCount: s?.variantCount ?? 0,
       variantsWithStock: s?.variantsWithStock ?? 0,
@@ -128,30 +147,240 @@ export function topByOmzet(skus: SkuRow[], n = 10): SkuRow[] {
   return [...skus].sort((a, b) => b.omzet - a.omzet).slice(0, n)
 }
 
+export function topByCtr(skus: SkuRow[], minViews = 100, n = 10): SkuRow[] {
+  return [...skus]
+    .filter((s) => s.dilihat >= minViews)
+    .sort((a, b) => b.ctr - a.ctr)
+    .slice(0, n)
+}
+
+export function topByAtcRate(skus: SkuRow[], minVisits = 100, n = 10): SkuRow[] {
+  return [...skus]
+    .filter((s) => s.dilihat >= minVisits && s.atcRate > 0)
+    .sort((a, b) => b.atcRate - a.atcRate)
+    .slice(0, n)
+}
+
 export function actionItems(ds: RawDataset, opts?: { topN?: number; bestSellerN?: number }): ActionItems {
   const topN = opts?.topN ?? 5
   const bestSellerN = opts?.bestSellerN ?? 5
   const skus = joinSkus(ds)
 
-  // 1. Worst ACOS - among SKUs that ran ads with meaningful spend (>= Rp 100k)
   const worstAcos = [...skus]
     .filter((s) => s.adSpend >= 100_000 && isFinite(s.acos))
     .sort((a, b) => b.acos - a.acos)
     .slice(0, topN)
 
-  // 2. Best-seller stock alerts: top N best sellers by omzet, flag stock <= 10 OR availability < 100%
   const bestSellers = [...skus].sort((a, b) => b.omzet - a.omzet).slice(0, Math.max(bestSellerN * 4, 20))
   const bestSellerLowStock = bestSellers
     .filter((s) => s.variantCount > 0 && (s.totalStock <= 50 || s.availabilityPct < 100))
     .slice(0, topN)
 
-  // 3. Potential ads: organic CTR >= 2%, omzet >= Rp 1jt, but ranAds = false OR adSpend < Rp 100k
   const potentialAds = [...skus]
     .filter((s) => s.ctr >= 2 && s.omzet >= 1_000_000 && (!s.ranAds || s.adSpend < 100_000))
     .sort((a, b) => b.ctr - a.ctr)
     .slice(0, topN)
 
   return { worstAcos, bestSellerLowStock, potentialAds }
+}
+
+// ---------- Recommendations ("Apa yang harus dilakuin") ----------
+
+export interface Recommendation {
+  level: 'high' | 'medium' | 'low'
+  title: string
+  detail: string
+}
+
+export function globalRecommendations(ds: RawDataset): Recommendation[] {
+  const recs: Recommendation[] = []
+  const k = summaryKpi(ds)
+  const skus = joinSkus(ds)
+
+  if (k.acos > 0 && k.acos > 20) {
+    recs.push({
+      level: 'high',
+      title: 'ACOS toko di atas 20%',
+      detail: `Blended ACOS ${k.acos.toFixed(1)}% — review iklan dengan ACOS terburuk dan pertimbangkan turunin bid atau pause.`,
+    })
+  } else if (k.acos > 0 && k.acos < 5) {
+    recs.push({
+      level: 'low',
+      title: 'ACOS sangat efisien',
+      detail: `Blended ACOS ${k.acos.toFixed(1)}% — masih ada ruang scale up budget iklan.`,
+    })
+  }
+
+  const bestSellers = [...skus].sort((a, b) => b.omzet - a.omzet).slice(0, 10)
+  const bsLowStock = bestSellers.filter((s) => s.variantCount > 0 && (s.totalStock <= 50 || s.availabilityPct < 100))
+  if (bsLowStock.length > 0) {
+    recs.push({
+      level: 'high',
+      title: `${bsLowStock.length} best-seller butuh refill stok`,
+      detail: `Top SKU dengan stok kritis atau varian kosong: ${bsLowStock.slice(0, 3).map((s) => trim(s.produkName)).join('; ')}`,
+    })
+  }
+
+  if (k.outOfStockSku > 0) {
+    recs.push({
+      level: 'medium',
+      title: `${k.outOfStockSku} produk stok kosong total`,
+      detail: 'Pertimbangkan delisting sementara atau prioritaskan restock biar nggak rusak ranking.',
+    })
+  }
+
+  if (k.adSpend > 0 && k.roas < 1) {
+    recs.push({
+      level: 'high',
+      title: 'Blended ROAS di bawah 1x',
+      detail: 'Kamu rugi: spend lebih besar dari omzet iklan. Pause iklan ACOS tinggi & evaluasi targeting.',
+    })
+  }
+
+  return recs.sort((a, b) => priority(a.level) - priority(b.level))
+}
+
+export function produkRecommendations(ds: RawDataset): Recommendation[] {
+  const recs: Recommendation[] = []
+  const k = summaryKpi(ds)
+  const skus = joinSkus(ds)
+
+  // Low CTR recommendation
+  if (k.ctrToko > 0 && k.ctrToko < 1) {
+    recs.push({
+      level: 'high',
+      title: 'CTR toko rendah (<1%)',
+      detail: `CTR ${k.ctrToko.toFixed(2)}% — perbaiki thumbnail, judul, harga, atau review SKU dengan view tinggi tapi klik rendah.`,
+    })
+  }
+
+  // Low CVR recommendation
+  if (k.cvrToko > 0 && k.cvrToko < 1) {
+    recs.push({
+      level: 'high',
+      title: 'CVR toko rendah (<1%)',
+      detail: `CVR ${k.cvrToko.toFixed(2)}% — cek harga vs kompetitor, foto produk, deskripsi, dan promo voucher.`,
+    })
+  }
+
+  // Low ATC rate
+  if (k.atcRateToko > 0 && k.atcRateToko < 5) {
+    recs.push({
+      level: 'medium',
+      title: 'Tingkat ATC rendah',
+      detail: `Rate ${k.atcRateToko.toFixed(2)}% — review harga & visualisasi produk; tambahkan trust signal (rating, review, garansi).`,
+    })
+  }
+
+  // High traffic but low conversion
+  const lowConverters = skus
+    .filter((s) => s.dilihat >= 5000 && s.cvr < 0.3 && s.cvr > 0)
+    .sort((a, b) => b.dilihat - a.dilihat)
+    .slice(0, 3)
+  if (lowConverters.length > 0) {
+    recs.push({
+      level: 'medium',
+      title: `${lowConverters.length} produk traffic tinggi, CVR rendah`,
+      detail: `Optimasi konten: ${lowConverters.map((s) => trim(s.produkName)).join('; ')}`,
+    })
+  }
+
+  // Hidden gems: high CVR but low traffic
+  const hidden = skus
+    .filter((s) => s.cvr >= 1 && s.dilihat < 5000 && s.dilihat > 100)
+    .sort((a, b) => b.cvr - a.cvr)
+    .slice(0, 3)
+  if (hidden.length > 0) {
+    recs.push({
+      level: 'low',
+      title: `${hidden.length} produk dengan CVR bagus tapi traffic kecil`,
+      detail: `Boost via iklan/feature di toko: ${hidden.map((s) => trim(s.produkName)).join('; ')}`,
+    })
+  }
+
+  return recs.sort((a, b) => priority(a.level) - priority(b.level))
+}
+
+export function iklanRecommendations(ds: RawDataset): Recommendation[] {
+  const recs: Recommendation[] = []
+  const k = summaryKpi(ds)
+  const adAgg = byAdType(ds.ads ?? [])
+  const skus = joinSkus(ds)
+
+  if (k.adSpend === 0) {
+    recs.push({
+      level: 'medium',
+      title: 'Belum ada data iklan',
+      detail: 'Upload export iklan CPC dari Shopee untuk lihat metrik ROAS, ACOS, dan rekomendasi.',
+    })
+    return recs
+  }
+
+  // Worst ad type
+  if (adAgg.length > 1) {
+    const worst = [...adAgg].filter((a) => a.spend >= 500_000).sort((a, b) => b.acos - a.acos)[0]
+    if (worst && worst.acos > 25) {
+      recs.push({
+        level: 'high',
+        title: `${worst.type} ACOS terburuk`,
+        detail: `${worst.type}: ACOS ${worst.acos.toFixed(1)}%, ROAS ${worst.roas.toFixed(2)}x. Pertimbangkan turunin alokasi budget atau revisi targeting.`,
+      })
+    }
+    const best = [...adAgg].filter((a) => a.spend >= 500_000).sort((a, b) => a.acos - b.acos)[0]
+    if (best && best.roas > 5) {
+      recs.push({
+        level: 'low',
+        title: `${best.type} paling efisien`,
+        detail: `ROAS ${best.roas.toFixed(2)}x · ACOS ${best.acos.toFixed(1)}%. Cocok di-scale.`,
+      })
+    }
+  }
+
+  // Worst individual ads
+  const worstAds = (ds.ads ?? [])
+    .filter((a) => a.biaya >= 500_000 && a.acos > 0.30)
+    .sort((a, b) => b.acos - a.acos)
+    .slice(0, 3)
+  if (worstAds.length > 0) {
+    recs.push({
+      level: 'high',
+      title: `${worstAds.length} iklan dengan ACOS > 30%`,
+      detail: `Pertimbangkan pause: ${worstAds.map((a) => trim(a.namaIklan)).join('; ')}`,
+    })
+  }
+
+  // Potential SKUs (organic CTR good, no ads)
+  const noAds = skus
+    .filter((s) => !s.ranAds && s.ctr >= 2 && s.omzet >= 1_000_000)
+    .sort((a, b) => b.omzet - a.omzet)
+    .slice(0, 3)
+  if (noAds.length > 0) {
+    recs.push({
+      level: 'medium',
+      title: `${noAds.length} produk potensial belum diiklankan`,
+      detail: `CTR organic bagus, mulai iklan: ${noAds.map((s) => trim(s.produkName)).join('; ')}`,
+    })
+  }
+
+  // CPC high
+  if (k.cpc > 0 && k.cpc > 1500) {
+    recs.push({
+      level: 'medium',
+      title: 'CPC relatif tinggi',
+      detail: `Avg CPC Rp ${Math.round(k.cpc).toLocaleString('id-ID')} — cek bid strategy, mungkin terlalu agresif.`,
+    })
+  }
+
+  return recs.sort((a, b) => priority(a.level) - priority(b.level))
+}
+
+function priority(l: Recommendation['level']): number {
+  return l === 'high' ? 0 : l === 'medium' ? 1 : 2
+}
+
+function trim(s: string, max = 40): string {
+  if (!s) return ''
+  return s.length <= max ? s : s.slice(0, max - 1).trimEnd() + '…'
 }
 
 function sum(arr: number[]): number {

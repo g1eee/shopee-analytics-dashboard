@@ -1,12 +1,20 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  BadgeDollarSign,
   Boxes,
   DollarSign,
+  Eye,
+  Gauge,
+  LayoutDashboard,
+  Lightbulb,
   Megaphone,
   MousePointerClick,
+  Package,
   Percent,
+  ReceiptText,
   ShoppingBag,
+  ShoppingCart,
   Target,
   TrendingUp,
 } from 'lucide-react'
@@ -20,14 +28,33 @@ import {
   YAxis,
   PieChart,
   Pie,
+  Scatter,
+  ScatterChart,
+  ZAxis,
+  CartesianGrid,
 } from 'recharts'
-import type { RawDataset } from '../lib/raw/types'
-import { actionItems, byAdType, joinSkus, summaryKpi, topByOmzet } from '../lib/raw/aggregate'
+import type { RawDataset, SkuRow, SummaryKpi } from '../lib/raw/types'
+import {
+  actionItems,
+  byAdType,
+  globalRecommendations,
+  iklanRecommendations,
+  joinSkus,
+  produkRecommendations,
+  summaryKpi,
+  topByAtcRate,
+  topByCtr,
+  topByOmzet,
+  type Recommendation,
+} from '../lib/raw/aggregate'
 import { KpiCard } from './KpiCard'
+import { FunnelChart } from './charts/FunnelChart'
+import { Tabs } from './Tabs'
 import { formatNumber, formatPercent, formatRupiah } from '../lib/utils'
 
 interface Props {
   ds: RawDataset
+  prevDs?: RawDataset | null
 }
 
 const AD_TYPE_COLORS: Record<string, string> = {
@@ -37,25 +64,72 @@ const AD_TYPE_COLORS: Record<string, string> = {
   Other: '#f59e0b',
 }
 
-export function SummaryView({ ds }: Props) {
+type TabKey = 'global' | 'produk' | 'iklan'
+
+export function SummaryView({ ds, prevDs }: Props) {
+  const [tab, setTab] = useState<TabKey>('global')
+
   const kpi = useMemo(() => summaryKpi(ds), [ds])
-  const adAgg = useMemo(() => byAdType(ds.ads ?? []), [ds])
+  const prevKpi = useMemo(() => (prevDs ? summaryKpi(prevDs) : null), [prevDs])
   const skus = useMemo(() => joinSkus(ds), [ds])
-  const top10 = useMemo(() => topByOmzet(skus, 10), [skus])
-  const actions = useMemo(() => actionItems(ds, { topN: 5, bestSellerN: 5 }), [ds])
+  const adAgg = useMemo(() => byAdType(ds.ads ?? []), [ds])
+
+  const tabs: { value: TabKey; label: string; icon: React.ReactNode }[] = [
+    { value: 'global', label: 'Global', icon: <LayoutDashboard className="h-4 w-4" /> },
+    { value: 'produk', label: 'Performa Produk', icon: <Package className="h-4 w-4" /> },
+    { value: 'iklan', label: 'Iklan', icon: <Megaphone className="h-4 w-4" /> },
+  ]
 
   return (
     <div className="flex flex-col gap-4">
-      <DatasetHeader ds={ds} />
+      <Tabs value={tab} onChange={(v) => setTab(v as TabKey)} items={tabs} />
+      {tab === 'global' && <GlobalTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} />}
+      {tab === 'produk' && <ProdukTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} />}
+      {tab === 'iklan' && <IklanTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} adAgg={adAgg} />}
+    </div>
+  )
+}
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+// ----- Helpers -----
+
+function deltaPct(curr: number, prev?: number | null) {
+  if (prev == null || prev === 0 || !isFinite(prev)) return undefined
+  if (!isFinite(curr)) return undefined
+  return ((curr - prev) / Math.abs(prev)) * 100
+}
+
+function deltaForKpi(kpi: SummaryKpi, prev: SummaryKpi | null, key: keyof SummaryKpi) {
+  if (!prev) return undefined
+  const v = deltaPct(Number(kpi[key]), Number(prev[key]))
+  return v == null ? undefined : { value: v }
+}
+
+// ----- Global Tab -----
+
+function GlobalTab({
+  kpi,
+  prevKpi,
+  skus,
+  ds,
+}: {
+  kpi: SummaryKpi
+  prevKpi: SummaryKpi | null
+  skus: SkuRow[]
+  ds: RawDataset
+}) {
+  const top10 = useMemo(() => topByOmzet(skus, 10), [skus])
+  const recs = useMemo(() => globalRecommendations(ds), [ds])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard
           label="Omzet (Pesanan Siap Dikirim)"
           value={formatRupiah(kpi.omzet, { compact: true })}
           sublabel={kpi.omzet ? formatRupiah(kpi.omzet) : 'Belum ada data'}
           icon={<DollarSign className="h-4 w-4" />}
           accent="violet"
+          delta={deltaForKpi(kpi, prevKpi, 'omzet')}
         />
         <KpiCard
           label="Pesanan Siap Dikirim"
@@ -63,20 +137,7 @@ export function SummaryView({ ds }: Props) {
           sublabel={`AOV ${formatRupiah(kpi.aov, { compact: true })}`}
           icon={<ShoppingBag className="h-4 w-4" />}
           accent="emerald"
-        />
-        <KpiCard
-          label="CTR Toko"
-          value={formatPercent(kpi.ctrToko, 2)}
-          sublabel="Klik ÷ Tampilan"
-          icon={<MousePointerClick className="h-4 w-4" />}
-          accent="sky"
-        />
-        <KpiCard
-          label="CVR Toko"
-          value={formatPercent(kpi.cvrToko, 2)}
-          sublabel="Pesanan ÷ Klik"
-          icon={<Percent className="h-4 w-4" />}
-          accent="amber"
+          delta={deltaForKpi(kpi, prevKpi, 'pesanan')}
         />
         <KpiCard
           label="Total Ad Spend"
@@ -84,13 +145,274 @@ export function SummaryView({ ds }: Props) {
           sublabel={kpi.adSpend ? formatRupiah(kpi.adSpend) : '—'}
           icon={<Megaphone className="h-4 w-4" />}
           accent="rose"
+          delta={deltaForKpi(kpi, prevKpi, 'adSpend')}
         />
         <KpiCard
-          label="Blended ROAS"
+          label="ACOS / CIR"
+          value={kpi.acos > 0 ? formatPercent(kpi.acos, 2) : '—'}
+          sublabel="Cost Income Ratio"
+          icon={<Target className="h-4 w-4" />}
+          accent="amber"
+          delta={deltaForKpi(kpi, prevKpi, 'acos')}
+        />
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-3">
+        <div className="card p-4 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-white">Top 10 SKU by Omzet</h3>
+          <p className="text-xs text-muted">Warna mencerminkan ACOS (hijau ≤ 10%, kuning ≤ 20%, merah lebih)</p>
+          <div className="mt-3 h-[320px]">
+            {top10.length === 0 ? (
+              <div className="text-sm text-muted py-12 text-center">Belum ada data produk.</div>
+            ) : (
+              <ResponsiveContainer>
+                <BarChart
+                  data={top10.map((s) => ({ ...s, label: shortName(s.produkName, 32) }))}
+                  layout="vertical"
+                  margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2433" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    tickFormatter={(v) => formatRupiah(Number(v), { compact: true })}
+                    tick={{ fill: '#64748b', fontSize: 11 }}
+                    stroke="#252a3d"
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    tick={{ fill: '#cbd5e1', fontSize: 11 }}
+                    stroke="#252a3d"
+                    width={150}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: '#11141f',
+                      border: '1px solid #252a3d',
+                      borderRadius: 12,
+                    }}
+                    formatter={(v, _n, p) => {
+                      const sku = p.payload as SkuRow
+                      return [`${formatRupiah(Number(v))} · ACOS ${formatPercent(sku.acos, 1)}`, 'Omzet']
+                    }}
+                    labelFormatter={(_, p) => {
+                      const sku = (p?.[0]?.payload ?? {}) as SkuRow
+                      return sku.produkName ?? ''
+                    }}
+                  />
+                  <Bar dataKey="omzet" radius={[0, 6, 6, 0]}>
+                    {top10.map((s, i) => (
+                      <Cell key={i} fill={acosColor(s.acos)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <RecommendationsCard recs={recs} />
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-3">
+        <SnapshotCard
+          icon={<ShoppingCart className="h-4 w-4 text-emerald-300" />}
+          title="Funnel Toko"
+          rows={[
+            { label: 'Tampilan', value: formatNumber(kpi.totalDilihat, { compact: true }) },
+            { label: 'Pengunjung', value: formatNumber(kpi.totalPengunjung, { compact: true }) },
+            { label: 'Klik', value: formatNumber(kpi.totalKlik, { compact: true }) },
+            { label: 'Add to Cart', value: formatNumber(kpi.totalAtc, { compact: true }) },
+            { label: 'Pesanan', value: formatNumber(kpi.pesanan, { compact: true }) },
+          ]}
+        />
+        <SnapshotCard
+          icon={<Gauge className="h-4 w-4 text-sky-300" />}
+          title="Konversi Toko"
+          rows={[
+            { label: 'CTR', value: formatPercent(kpi.ctrToko, 2) },
+            { label: 'CVR', value: formatPercent(kpi.cvrToko, 2) },
+            { label: 'ATC Rate', value: formatPercent(kpi.atcRateToko, 2) },
+            { label: 'AOV', value: formatRupiah(kpi.aov, { compact: true }) },
+          ]}
+        />
+        <SnapshotCard
+          icon={<Boxes className="h-4 w-4 text-amber-300" />}
+          title="Inventori"
+          rows={[
+            { label: 'Total SKU', value: formatNumber(kpi.totalSku) },
+            { label: 'SKU stok 0', value: formatNumber(kpi.outOfStockSku) },
+            {
+              label: 'SKU avail < 100%',
+              value: formatNumber(skus.filter((s) => s.variantCount > 0 && s.availabilityPct < 100).length),
+            },
+          ]}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ----- Produk Tab -----
+
+function ProdukTab({
+  kpi,
+  prevKpi,
+  skus,
+  ds,
+}: {
+  kpi: SummaryKpi
+  prevKpi: SummaryKpi | null
+  skus: SkuRow[]
+  ds: RawDataset
+}) {
+  const recs = useMemo(() => produkRecommendations(ds), [ds])
+  const topCtr = useMemo(() => topByCtr(skus, 1000, 8), [skus])
+  const topAtc = useMemo(() => topByAtcRate(skus, 500, 8), [skus])
+  const stockAlerts = useMemo(() => actionItems(ds, { topN: 5, bestSellerN: 5 }).bestSellerLowStock, [ds])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard
+          label="Tampilan Produk"
+          value={formatNumber(kpi.totalDilihat, { compact: true })}
+          sublabel={`Pengunjung ${formatNumber(kpi.totalPengunjung, { compact: true })}`}
+          icon={<Eye className="h-4 w-4" />}
+          accent="violet"
+          delta={deltaForKpi(kpi, prevKpi, 'totalDilihat')}
+        />
+        <KpiCard
+          label="Add to Cart"
+          value={formatNumber(kpi.totalAtc, { compact: true })}
+          sublabel={`ATC Rate ${formatPercent(kpi.atcRateToko, 2)}`}
+          icon={<ShoppingCart className="h-4 w-4" />}
+          accent="emerald"
+          delta={deltaForKpi(kpi, prevKpi, 'totalAtc')}
+        />
+        <KpiCard
+          label="CTR Toko"
+          value={formatPercent(kpi.ctrToko, 2)}
+          sublabel={`Klik ${formatNumber(kpi.totalKlik, { compact: true })} ÷ Tampilan`}
+          icon={<MousePointerClick className="h-4 w-4" />}
+          accent="sky"
+          delta={deltaForKpi(kpi, prevKpi, 'ctrToko')}
+        />
+        <KpiCard
+          label="CVR Toko"
+          value={formatPercent(kpi.cvrToko, 2)}
+          sublabel={`Pesanan ${formatNumber(kpi.pesanan)} ÷ Klik`}
+          icon={<Percent className="h-4 w-4" />}
+          accent="amber"
+          delta={deltaForKpi(kpi, prevKpi, 'cvrToko')}
+        />
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-3">
+        <div className="lg:col-span-2">
+          <FunnelChart
+            impression={kpi.totalDilihat}
+            visitor={kpi.totalPengunjung}
+            click={kpi.totalKlik}
+            addToCart={kpi.totalAtc}
+            order={kpi.pesanan}
+          />
+        </div>
+        <RecommendationsCard recs={recs} />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-3">
+        <RankCard
+          title="Top SKU by CTR"
+          subtitle="CTR organic — produk yang berhasil tarik klik"
+          rows={topCtr.map((s) => ({
+            primary: s.produkName,
+            secondary: `Tampilan ${formatNumber(s.dilihat, { compact: true })} · Klik ${formatNumber(s.klik, { compact: true })}`,
+            metric: formatPercent(s.ctr, 2),
+            metricColor: 'text-violet-300',
+          }))}
+        />
+        <RankCard
+          title="Top SKU by ATC Rate"
+          subtitle="Rate pengunjung yang masukin keranjang"
+          rows={topAtc.map((s) => ({
+            primary: s.produkName,
+            secondary: `Pengunjung ${formatNumber(s.dilihat, { compact: true })} · ATC ${formatNumber(s.atc, { compact: true })}`,
+            metric: formatPercent(s.atcRate, 2),
+            metricColor: 'text-emerald-300',
+          }))}
+        />
+      </div>
+
+      <ActionList
+        title="Best-seller stok kritis"
+        subtitle="5 SKU best-seller dengan stok ≤ 50 atau availability variant < 100%"
+        items={stockAlerts}
+        empty="Semua best-seller stok aman & semua varian tersedia"
+        renderMetric={(s) => (
+          <div className="flex items-center gap-2">
+            <span className="text-amber-300 font-semibold">{formatNumber(s.totalStock)}</span>
+            <span className="text-xs text-muted">unit</span>
+          </div>
+        )}
+        renderSub={(s) => (
+          <div className="text-[11px] text-muted">
+            Avail{' '}
+            <span className={s.availabilityPct < 100 ? 'text-amber-300 font-medium' : 'text-emerald-300'}>
+              {formatPercent(s.availabilityPct, 0)}
+            </span>{' '}
+            ({s.variantsWithStock}/{s.variantCount} varian) · Omzet{' '}
+            {formatRupiah(s.omzet, { compact: true })}
+          </div>
+        )}
+        tone="amber"
+      />
+    </div>
+  )
+}
+
+// ----- Iklan Tab -----
+
+function IklanTab({
+  kpi,
+  prevKpi,
+  skus,
+  ds,
+  adAgg,
+}: {
+  kpi: SummaryKpi
+  prevKpi: SummaryKpi | null
+  skus: SkuRow[]
+  ds: RawDataset
+  adAgg: ReturnType<typeof byAdType>
+}) {
+  const recs = useMemo(() => iklanRecommendations(ds), [ds])
+  const actions = useMemo(() => actionItems(ds, { topN: 5, bestSellerN: 5 }), [ds])
+  // Scatter: SKUs that ran ads — Spend vs ROAS, sized by Omzet
+  const scatterData = useMemo(
+    () =>
+      skus
+        .filter((s) => s.ranAds && s.adSpend >= 50_000 && isFinite(s.roas))
+        .slice(0, 200)
+        .map((s) => ({
+          x: s.adSpend,
+          y: Math.min(s.roas, 50),
+          z: s.omzet,
+          name: s.produkName,
+        })),
+    [skus],
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard
+          label="ROAS"
           value={kpi.roas > 0 ? kpi.roas.toFixed(2) + 'x' : '—'}
-          sublabel={kpi.roas > 0 ? 'Omzet iklan ÷ Spend' : 'Belum ada data iklan'}
+          sublabel="Omzet iklan ÷ Spend"
           icon={<TrendingUp className="h-4 w-4" />}
           accent="emerald"
+          delta={deltaForKpi(kpi, prevKpi, 'roas')}
         />
         <KpiCard
           label="ACOS"
@@ -98,29 +420,30 @@ export function SummaryView({ ds }: Props) {
           sublabel="Spend ÷ Omzet iklan"
           icon={<Target className="h-4 w-4" />}
           accent="rose"
+          delta={deltaForKpi(kpi, prevKpi, 'acos')}
         />
         <KpiCard
-          label="SKU"
-          value={formatNumber(kpi.totalSku)}
-          sublabel={
-            kpi.totalSku
-              ? `${kpi.outOfStockSku} produk stok 0`
-              : 'Upload data stok untuk melihat'
-          }
-          icon={<Boxes className="h-4 w-4" />}
-          accent="sky"
+          label="CPC"
+          value={kpi.cpc > 0 ? formatRupiah(kpi.cpc, { compact: true }) : '—'}
+          sublabel="Spend ÷ Klik iklan"
+          icon={<BadgeDollarSign className="h-4 w-4" />}
+          accent="amber"
+          delta={deltaForKpi(kpi, prevKpi, 'cpc')}
+        />
+        <KpiCard
+          label="Total Ad Spend"
+          value={formatRupiah(kpi.adSpend, { compact: true })}
+          sublabel={`${formatNumber(kpi.adKlik, { compact: true })} klik · ${formatNumber(kpi.adKonversi, { compact: true })} konversi`}
+          icon={<ReceiptText className="h-4 w-4" />}
+          accent="violet"
+          delta={deltaForKpi(kpi, prevKpi, 'adSpend')}
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid lg:grid-cols-2 gap-3">
-        <div className="card p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Distribusi Spend per Jenis Iklan</h3>
-              <p className="text-xs text-muted">ROAS & ACOS dihitung per kategori</p>
-            </div>
-          </div>
+      <div className="grid lg:grid-cols-3 gap-3">
+        <div className="card p-4 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-white">Distribusi Spend per Jenis Iklan</h3>
+          <p className="text-xs text-muted">ROAS & ACOS dihitung per kategori</p>
           <div className="mt-3 grid sm:grid-cols-2 gap-3 items-center">
             {adAgg.length === 0 ? (
               <div className="text-sm text-muted col-span-2 py-12 text-center">
@@ -169,14 +492,10 @@ export function SummaryView({ ds }: Props) {
                       </div>
                       <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
                         <span className="text-muted">
-                          ROAS{' '}
-                          <span className="text-white font-medium">{a.roas.toFixed(2)}x</span>
+                          ROAS <span className="text-white font-medium">{a.roas.toFixed(2)}x</span>
                         </span>
                         <span className="text-muted">
-                          ACOS{' '}
-                          <span className="text-white font-medium">
-                            {formatPercent(a.acos, 1)}
-                          </span>
+                          ACOS <span className="text-white font-medium">{formatPercent(a.acos, 1)}</span>
                         </span>
                       </div>
                     </div>
@@ -186,196 +505,225 @@ export function SummaryView({ ds }: Props) {
             )}
           </div>
         </div>
+        <RecommendationsCard recs={recs} />
+      </div>
 
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold text-white">Top 10 SKU by Omzet</h3>
-          <p className="text-xs text-muted">Warna mencerminkan ACOS (hijau ≤ 10%, kuning ≤ 20%, merah lebih)</p>
-          <div className="mt-3 h-[280px]">
-            {top10.length === 0 ? (
-              <div className="text-sm text-muted py-12 text-center">Belum ada data produk.</div>
-            ) : (
-              <ResponsiveContainer>
-                <BarChart
-                  data={top10.map((s) => ({
-                    ...s,
-                    label: shortName(s.produkName),
-                  }))}
-                  layout="vertical"
-                  margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
-                >
-                  <XAxis
-                    type="number"
-                    tickFormatter={(v) => formatRupiah(Number(v), { compact: true })}
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    stroke="#252a3d"
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="label"
-                    tick={{ fill: '#cbd5e1', fontSize: 11 }}
-                    stroke="#252a3d"
-                    width={140}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: '#11141f',
-                      border: '1px solid #252a3d',
-                      borderRadius: 12,
-                    }}
-                    formatter={(v, _n, p) => {
-                      const sku = p.payload as ReturnType<typeof topByOmzet>[number]
-                      return [
-                        `${formatRupiah(Number(v))}\nACOS ${formatPercent(sku.acos, 1)}`,
-                        'Omzet',
-                      ]
-                    }}
-                    labelFormatter={(_, p) => {
-                      const sku = (p?.[0]?.payload ?? {}) as ReturnType<typeof topByOmzet>[number]
-                      return sku.produkName ?? ''
-                    }}
-                  />
-                  <Bar dataKey="omzet" radius={[0, 6, 6, 0]}>
-                    {top10.map((s, i) => (
-                      <Cell key={i} fill={acosColor(s.acos)} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold text-white">Spend vs ROAS per SKU</h3>
+        <p className="text-xs text-muted">
+          Setiap titik = 1 SKU dengan iklan. Posisi atas-kanan = ROAS bagus, spend besar (idealnya banyak).
+          Bawah-kanan = boros (spend besar, ROAS rendah, perlu pause).
+        </p>
+        <div className="mt-3 h-[300px]">
+          {scatterData.length === 0 ? (
+            <div className="text-sm text-muted py-16 text-center">Belum ada data iklan SKU.</div>
+          ) : (
+            <ResponsiveContainer>
+              <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2433" />
+                <XAxis
+                  type="number"
+                  dataKey="x"
+                  name="Spend"
+                  tickFormatter={(v) => formatRupiah(Number(v), { compact: true })}
+                  tick={{ fill: '#64748b', fontSize: 11 }}
+                  stroke="#252a3d"
+                />
+                <YAxis
+                  type="number"
+                  dataKey="y"
+                  name="ROAS"
+                  tickFormatter={(v) => Number(v).toFixed(1) + 'x'}
+                  tick={{ fill: '#64748b', fontSize: 11 }}
+                  stroke="#252a3d"
+                />
+                <ZAxis type="number" dataKey="z" range={[40, 600]} name="Omzet" />
+                <Tooltip
+                  cursor={{ strokeDasharray: '3 3' }}
+                  contentStyle={{
+                    background: '#11141f',
+                    border: '1px solid #252a3d',
+                    borderRadius: 12,
+                  }}
+                  formatter={(v, name) => {
+                    if (name === 'Spend' || name === 'Omzet') return formatRupiah(Number(v), { compact: true })
+                    if (name === 'ROAS') return Number(v).toFixed(2) + 'x'
+                    return v
+                  }}
+                  labelFormatter={(_, p) => {
+                    const d = (p?.[0]?.payload ?? {}) as { name?: string }
+                    return d.name ?? ''
+                  }}
+                />
+                <Scatter data={scatterData} fill="#a78bfa" fillOpacity={0.7} />
+              </ScatterChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
-      {/* Action panel */}
-      <div className="grid xl:grid-cols-3 gap-3">
-        <ActionCard
+      <div className="grid lg:grid-cols-2 gap-3">
+        <ActionList
           title="ACOS terburuk"
-          subtitle="5 SKU dengan ACOS tertinggi (spend ≥ Rp 100rb) — pertimbangkan pause atau optimasi bid"
-          tone="rose"
-          empty="Belum ada SKU dengan ACOS bermasalah"
+          subtitle="5 SKU spend ≥ Rp 100rb dengan ACOS tertinggi — kandidat pause"
           items={actions.worstAcos}
+          empty="Belum ada SKU dengan ACOS bermasalah"
           renderMetric={(s) => (
             <span className="text-rose-300 font-semibold">{formatPercent(s.acos, 1)}</span>
           )}
           renderSub={(s) => (
-            <span className="text-muted">
+            <span className="text-muted text-[11px]">
               Spend {formatRupiah(s.adSpend, { compact: true })} · ROAS{' '}
               {s.adSpend > 0 ? (s.adOmzet / s.adSpend).toFixed(2) + 'x' : '—'}
             </span>
           )}
+          tone="rose"
         />
-        <ActionCard
-          title="Best-seller stok kritis"
-          subtitle="5 SKU best-seller dengan stok ≤ 50 unit atau availability variant < 100%"
-          tone="amber"
-          empty="Semua best-seller stok aman & semua varian tersedia"
-          items={actions.bestSellerLowStock}
-          renderMetric={(s) => (
-            <div className="flex items-center gap-2">
-              <span className="text-amber-300 font-semibold">{formatNumber(s.totalStock)}</span>
-              <span className="text-xs text-muted">unit</span>
-            </div>
-          )}
-          renderSub={(s) => (
-            <div className="text-xs text-muted">
-              Avail{' '}
-              <span
-                className={
-                  s.availabilityPct < 100 ? 'text-amber-300 font-medium' : 'text-emerald-300'
-                }
-              >
-                {formatPercent(s.availabilityPct, 0)}
-              </span>{' '}
-              ({s.variantsWithStock}/{s.variantCount} varian) · Omzet{' '}
-              {formatRupiah(s.omzet, { compact: true })}
-            </div>
-          )}
-        />
-        <ActionCard
+        <ActionList
           title="Potensial diiklankan"
           subtitle="5 SKU CTR ≥ 2% dengan omzet ≥ Rp 1jt tapi belum/sedikit diiklankan"
-          tone="emerald"
-          empty="Tidak ada produk potensial saat ini"
           items={actions.potentialAds}
+          empty="Tidak ada produk potensial saat ini"
           renderMetric={(s) => (
             <span className="text-emerald-300 font-semibold">{formatPercent(s.ctr, 1)}</span>
           )}
           renderSub={(s) => (
-            <span className="text-muted">
+            <span className="text-muted text-[11px]">
               Omzet {formatRupiah(s.omzet, { compact: true })} · Ad spend{' '}
               {s.ranAds ? formatRupiah(s.adSpend, { compact: true }) : 'belum diiklankan'}
             </span>
           )}
+          tone="emerald"
         />
       </div>
     </div>
   )
 }
 
-function DatasetHeader({ ds }: { ds: RawDataset }) {
+// ----- Reusable -----
+
+function RecommendationsCard({ recs }: { recs: Recommendation[] }) {
   return (
-    <div className="card p-4 flex flex-wrap items-center gap-3">
-      <div className="flex flex-col">
-        <h2 className="text-base font-semibold text-white">{ds.name}</h2>
-        <div className="text-xs text-muted flex flex-wrap gap-x-3 gap-y-0.5">
-          {ds.brand && <span>Brand: {ds.brand}</span>}
-          {ds.period?.start && ds.period?.end && (
-            <span>
-              Periode: {ds.period.start} → {ds.period.end}
-            </span>
-          )}
-          <span>Diupload {new Date(ds.uploadedAt).toLocaleString('id-ID')}</span>
-        </div>
+    <div className="card p-4">
+      <div className="flex items-center gap-2">
+        <Lightbulb className="h-4 w-4 text-amber-300" />
+        <h3 className="text-sm font-semibold text-white">Apa yang harus dilakuin</h3>
       </div>
-      <div className="flex flex-wrap gap-2 ml-auto">
-        <SourceBadge label="Performa Produk" filled={!!ds.produk?.length} count={ds.produk?.length} />
-        <SourceBadge label="Iklan" filled={!!ds.ads?.length} count={ds.ads?.length} />
-        <SourceBadge label="Stok" filled={!!ds.stock?.length} count={ds.stock?.length} />
-      </div>
+      <p className="text-xs text-muted">Auto-summary insight & rekomendasi action</p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {recs.length === 0 ? (
+          <li className="text-xs text-muted text-center py-6">
+            Tidak ada rekomendasi prioritas — performa sehat.
+          </li>
+        ) : (
+          recs.map((r, i) => (
+            <li
+              key={i}
+              className="rounded-xl border border-border bg-bg-elev p-3 flex items-start gap-3"
+            >
+              <span
+                className={
+                  'pill border ' +
+                  (r.level === 'high'
+                    ? 'bg-rose-400/10 text-rose-300 border-rose-400/30'
+                    : r.level === 'medium'
+                      ? 'bg-amber-400/10 text-amber-300 border-amber-400/30'
+                      : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/30')
+                }
+              >
+                {r.level}
+              </span>
+              <div>
+                <p className="text-sm text-white font-medium leading-tight">{r.title}</p>
+                <p className="text-xs text-muted mt-1 leading-snug">{r.detail}</p>
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
     </div>
   )
 }
 
-function SourceBadge({ label, filled, count }: { label: string; filled: boolean; count?: number }) {
+function SnapshotCard({
+  icon,
+  title,
+  rows,
+}: {
+  icon: React.ReactNode
+  title: string
+  rows: { label: string; value: string }[]
+}) {
   return (
-    <span
-      className={
-        'pill border ' +
-        (filled
-          ? 'bg-emerald-400/10 text-emerald-300 border-emerald-400/30'
-          : 'bg-white/5 text-muted border-border')
-      }
-    >
-      {label}
-      {filled && count != null ? <span className="text-muted">· {formatNumber(count)}</span> : null}
-    </span>
+    <div className="card p-4">
+      <div className="flex items-center gap-2">
+        {icon}
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
+      </div>
+      <dl className="mt-3 flex flex-col gap-1.5">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between text-sm">
+            <dt className="text-muted">{r.label}</dt>
+            <dd className="text-white font-medium">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 
-interface ActionCardProps {
-  title: string
-  subtitle: string
-  tone: 'rose' | 'amber' | 'emerald'
-  empty: string
-  items: ReturnType<typeof actionItems>['worstAcos']
-  renderMetric: (s: ReturnType<typeof actionItems>['worstAcos'][number]) => React.ReactNode
-  renderSub: (s: ReturnType<typeof actionItems>['worstAcos'][number]) => React.ReactNode
-}
-
-function ActionCard({
+function RankCard({
   title,
   subtitle,
-  tone,
-  empty,
-  items,
-  renderMetric,
-  renderSub,
-}: ActionCardProps) {
-  const toneCls = {
-    rose: 'text-rose-300',
-    amber: 'text-amber-300',
-    emerald: 'text-emerald-300',
-  }[tone]
+  rows,
+}: {
+  title: string
+  subtitle: string
+  rows: { primary: string; secondary: string; metric: string; metricColor?: string }[]
+}) {
+  return (
+    <div className="card p-4">
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+      <p className="text-xs text-muted">{subtitle}</p>
+      <ul className="mt-3 flex flex-col gap-1.5">
+        {rows.length === 0 ? (
+          <li className="text-xs text-muted text-center py-6">Belum ada data.</li>
+        ) : (
+          rows.map((r, i) => (
+            <li
+              key={i}
+              className="flex items-center gap-2 rounded-lg border border-border bg-bg-elev px-2.5 py-1.5"
+            >
+              <span className="text-[11px] text-muted w-5">#{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white truncate" title={r.primary}>
+                  {r.primary}
+                </p>
+                <p className="text-[11px] text-muted truncate">{r.secondary}</p>
+              </div>
+              <span className={'text-sm font-semibold shrink-0 ' + (r.metricColor ?? 'text-white')}>
+                {r.metric}
+              </span>
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
+  )
+}
+
+interface ActionListProps {
+  title: string
+  subtitle: string
+  items: SkuRow[]
+  empty: string
+  tone: 'rose' | 'amber' | 'emerald'
+  renderMetric: (s: SkuRow) => React.ReactNode
+  renderSub: (s: SkuRow) => React.ReactNode
+}
+
+function ActionList({ title, subtitle, items, empty, tone, renderMetric, renderSub }: ActionListProps) {
+  const toneCls = { rose: 'text-rose-300', amber: 'text-amber-300', emerald: 'text-emerald-300' }[tone]
   return (
     <div className="card p-4">
       <div className="flex items-start gap-2">
@@ -398,7 +746,7 @@ function ActionCard({
                 <div className="text-sm text-white truncate" title={s.produkName}>
                   {s.produkName}
                 </div>
-                <div className="text-[11px] mt-0.5">{renderSub(s)}</div>
+                <div className="mt-0.5">{renderSub(s)}</div>
               </div>
               <div className="text-right shrink-0">{renderMetric(s)}</div>
             </li>
@@ -410,6 +758,7 @@ function ActionCard({
 }
 
 function shortName(name: string, max = 38): string {
+  if (!name) return ''
   if (name.length <= max) return name
   return name.slice(0, max - 1).trimEnd() + '…'
 }

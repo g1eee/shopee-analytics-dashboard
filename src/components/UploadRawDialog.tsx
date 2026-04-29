@@ -20,6 +20,7 @@ interface UploadRawDialogProps {
   onClose: () => void
   onLoaded: (ds: RawDataset) => void
   onLoadSample: () => void
+  previousBrands?: string[]
 }
 
 type Slot = { kind: 'produk' | 'ads' | 'stock'; label: string; description: string; icon: typeof Package }
@@ -45,10 +46,19 @@ const SLOTS: Slot[] = [
   },
 ]
 
-export function UploadRawDialog({ open, onClose, onLoaded, onLoadSample }: UploadRawDialogProps) {
+export function UploadRawDialog({
+  open,
+  onClose,
+  onLoaded,
+  onLoadSample,
+  previousBrands = [],
+}: UploadRawDialogProps) {
   const [parsed, setParsed] = useState<Record<string, ParsedFile>>({})
   const [parsing, setParsing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [brandLabelInput, setBrandLabelInput] = useState<string | null>(null)
+  // brandLabel: user-input takes priority; otherwise auto-derive from parsed files.
+  const brandLabel = brandLabelInput ?? deriveBrand(parsed) ?? ''
 
   const handleFiles = useCallback(async (files: File[]) => {
     if (!files.length) return
@@ -91,14 +101,17 @@ export function UploadRawDialog({ open, onClose, onLoaded, onLoadSample }: Uploa
   function reset() {
     setParsed({})
     setError(null)
+    setBrandLabelInput(null)
   }
 
   function confirm() {
     if (!canConfirm) return
+    const finalBrand = brandLabel.trim() || 'Tanpa Brand'
     const ds: RawDataset = {
       id: 'ds-' + Date.now(),
-      name: deriveName(parsed),
-      brand: deriveBrand(parsed),
+      name: deriveName(parsed, finalBrand),
+      brand: finalBrand,
+      storeName: parsed.ads?.meta?.storeName,
       uploadedAt: new Date().toISOString(),
       period: parsed.ads?.meta?.period ?? parsed.produk?.meta?.period,
       cabangNames: parsed.stock?.meta?.cabangNames,
@@ -144,6 +157,41 @@ export function UploadRawDialog({ open, onClose, onLoaded, onLoadSample }: Uploa
             {isDragActive ? 'Lepaskan file di sini…' : 'Drop file Excel/CSV, atau klik untuk pilih'}
           </p>
           <p className="mt-1 text-xs text-muted">.xlsx · .xls · .csv</p>
+        </div>
+
+        <div className="mt-4">
+          <label className="label text-muted">Nama Brand</label>
+          <div className="mt-1 flex flex-wrap gap-2 items-center">
+            <input
+              type="text"
+              value={brandLabel}
+              onChange={(e) => setBrandLabelInput(e.target.value)}
+              placeholder="Misal: ATRIA, RTSR, dll"
+              className="flex-1 min-w-[180px] rounded-xl border border-border bg-bg-elev px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent"
+            />
+            {previousBrands.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {previousBrands.slice(0, 5).map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    className={cn(
+                      'pill border transition',
+                      brandLabel === b
+                        ? 'bg-accent/20 text-accent border-accent/40'
+                        : 'bg-bg-elev text-muted border-border hover:text-white hover:border-accent/40',
+                    )}
+                    onClick={() => setBrandLabelInput(b)}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className="text-[11px] text-muted mt-1">
+            Auto-fill dari nama produk. Edit untuk multi-brand atau gunakan tombol untuk reuse brand sebelumnya.
+          </p>
         </div>
 
         <div className="mt-4 grid sm:grid-cols-3 gap-2">
@@ -223,16 +271,12 @@ export function UploadRawDialog({ open, onClose, onLoaded, onLoadSample }: Uploa
   )
 }
 
-function deriveName(parsed: Record<string, ParsedFile>): string {
+function deriveName(parsed: Record<string, ParsedFile>, brand: string): string {
   const period = parsed.ads?.meta?.period ?? parsed.produk?.meta?.period
-  const store = parsed.ads?.meta?.storeName
   if (period?.start && period?.end) {
-    const s = period.start
-    const e = period.end
-    return `${store ? store + ' · ' : ''}${s} → ${e}`
+    return `${brand} · ${period.start} → ${period.end}`
   }
-  if (store) return store
-  return 'Dataset Shopee · ' + new Date().toLocaleDateString('id-ID')
+  return `${brand} · ${new Date().toLocaleDateString('id-ID')}`
 }
 
 function deriveBrand(parsed: Record<string, ParsedFile>): string | undefined {

@@ -74,6 +74,10 @@ export function generateRawSample(): RawDataset {
     const pesananDibuat = Math.round(pesanan * (1.05 + rand() * 0.25))
     const omzetDibuat = Math.round(omzet * (1.05 + rand() * 0.3))
 
+    const pengunjungKunjungan = Math.floor(dilihat * (0.55 + rand() * 0.15))
+    const ditambahKeKeranjang = Math.floor(klik * (0.18 + rand() * 0.15))
+    const pengunjungAtc = Math.floor(ditambahKeKeranjang * (0.7 + rand() * 0.2))
+    const atcRate = pengunjungKunjungan > 0 ? pengunjungAtc / pengunjungKunjungan : 0
     ds.produk!.push({
       kodeProduk: kode,
       produkName,
@@ -91,6 +95,10 @@ export function generateRawSample(): RawDataset {
       pesananDibuat,
       pesananSiapDikirim: pesanan,
       totalPembeli: Math.floor(pesanan * 0.9),
+      pengunjungKunjungan,
+      pengunjungAtc,
+      ditambahKeKeranjang,
+      atcRate,
     })
 
     // Stock - some products have low availability
