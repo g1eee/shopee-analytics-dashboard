@@ -13,6 +13,7 @@ import {
   removeRawByBrand,
   removeRawDataset,
   setActiveRaw,
+  type SaveResult,
 } from './lib/raw/storage'
 import type { RawDataset } from './lib/raw/types'
 import {
@@ -41,6 +42,20 @@ export default function App() {
     | { kind: 'all' }
     | null
   >(null)
+  const [storageNotice, setStorageNotice] = useState<
+    | { kind: 'trimmed'; count: number }
+    | { kind: 'failed' }
+    | null
+  >(null)
+
+  function applySave(result: { state: ReturnType<typeof loadRawState>; result: SaveResult }) {
+    setState(result.state)
+    if (!result.result.ok) {
+      setStorageNotice({ kind: 'failed' })
+    } else if (result.result.trimmed && result.result.trimmed > 0) {
+      setStorageNotice({ kind: 'trimmed', count: result.result.trimmed })
+    }
+  }
 
   // active dataset from storage (last upload / history pick).
   const stored = state.datasets.find((d) => d.id === state.activeId) ?? state.datasets[0] ?? null
@@ -82,12 +97,12 @@ export default function App() {
   }, [state.datasets, selected])
 
   function handleLoaded(ds: RawDataset) {
-    setState((s) => addRawDataset(s, ds))
+    applySave(addRawDataset(state, ds))
     setOverride(null)
   }
   function handleSample() {
     const ds = generateRawSample()
-    setState((s) => addRawDataset(s, ds))
+    applySave(addRawDataset(state, ds))
     setOverride(null)
     setShowUpload(false)
   }
@@ -161,6 +176,16 @@ export default function App() {
       />
 
       <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 pb-10 mt-4">
+        {storageNotice && (
+          <StorageNotice
+            notice={storageNotice}
+            onDismiss={() => setStorageNotice(null)}
+            onOpenHistory={() => {
+              setShowHistory(true)
+              setStorageNotice(null)
+            }}
+          />
+        )}
         {noData ? (
           <EmptyState onUpload={() => setShowUpload(true)} onLoadSample={handleSample} />
         ) : activeDs ? (
@@ -221,6 +246,67 @@ export default function App() {
         onCancel={() => setConfirm(null)}
         onConfirm={applyConfirm}
       />
+    </div>
+  )
+}
+
+function StorageNotice({
+  notice,
+  onDismiss,
+  onOpenHistory,
+}: {
+  notice: { kind: 'trimmed'; count: number } | { kind: 'failed' }
+  onDismiss: () => void
+  onOpenHistory: () => void
+}) {
+  if (notice.kind === 'trimmed') {
+    return (
+      <div className="mb-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-3">
+        <span className="h-2 w-2 mt-2 rounded-full bg-amber-300 shrink-0" />
+        <div className="flex-1 text-sm">
+          <p className="text-white font-medium">
+            Storage browser hampir penuh — {notice.count} dataset paling lama dihapus
+          </p>
+          <p className="text-xs text-muted mt-0.5">
+            Browser cuma punya ~5–10MB localStorage. Untuk lega, hapus dataset yang udah ga
+            dipakai dari{' '}
+            <button className="underline hover:text-white" onClick={onOpenHistory}>
+              Sync History
+            </button>
+            .
+          </p>
+        </div>
+        <button
+          className="text-muted hover:text-white text-xs px-2 py-1 shrink-0"
+          onClick={onDismiss}
+        >
+          Tutup
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="mb-4 rounded-2xl border border-rose-500/30 bg-rose-500/5 p-3 flex items-start gap-3">
+      <span className="h-2 w-2 mt-2 rounded-full bg-rose-300 shrink-0" />
+      <div className="flex-1 text-sm">
+        <p className="text-white font-medium">
+          Gagal menyimpan dataset — storage browser penuh
+        </p>
+        <p className="text-xs text-muted mt-0.5">
+          Dataset terakhir yang kamu upload <span className="text-rose-200">tidak tersimpan</span>{' '}
+          dan akan hilang kalau halaman di-reload. Hapus dataset lama dulu di{' '}
+          <button className="underline hover:text-white" onClick={onOpenHistory}>
+            Sync History
+          </button>{' '}
+          atau pakai brand selector, lalu upload ulang.
+        </p>
+      </div>
+      <button
+        className="text-muted hover:text-white text-xs px-2 py-1 shrink-0"
+        onClick={onDismiss}
+      >
+        Tutup
+      </button>
     </div>
   )
 }
