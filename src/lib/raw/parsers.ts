@@ -143,6 +143,7 @@ function mapAdType(raw: string, namaIklan: string): AdType {
   const r = (raw || '').toLowerCase()
   const n = namaIklan.toLowerCase()
   if (r.includes('gmv max') || n.includes('gmv max')) return 'GMV Max'
+  if (r.includes('iklan toko') || r.includes('shop ads')) return 'Iklan Toko'
   if (r.includes('manual')) return 'Manual'
   if (r.includes('iklan produk')) return 'Iklan Produk'
   if (r.includes('produk')) return 'Iklan Produk'

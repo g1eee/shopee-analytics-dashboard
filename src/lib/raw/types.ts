@@ -1,6 +1,6 @@
 // Types for raw Shopee Seller Center exports.
 
-export type AdType = 'GMV Max' | 'Iklan Produk' | 'Manual' | 'Other'
+export type AdType = 'GMV Max' | 'Iklan Produk' | 'Iklan Toko' | 'Manual' | 'Other'
 
 export interface ProdukRow {
   kodeProduk: string
