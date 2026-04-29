@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react'
-import { Calendar, ChevronDown, Clock, Sparkles, Upload } from 'lucide-react'
+import { Calendar, ChevronDown, Clock, Sparkles, Trash2, Upload } from 'lucide-react'
 import { EmptyState } from './components/EmptyState'
 import { SummaryView } from './components/SummaryView'
 import { UploadRawDialog } from './components/UploadRawDialog'
 import { HistoryDialog } from './components/HistoryDialog'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { generateRawSample } from './lib/raw/sample'
 import {
   addRawDataset,
+  clearAllRaw,
   loadRawState,
+  removeRawByBrand,
   removeRawDataset,
   setActiveRaw,
 } from './lib/raw/storage'
@@ -32,6 +35,12 @@ export default function App() {
   const [state, setState] = useState(() => loadRawState())
   const [showUpload, setShowUpload] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [confirm, setConfirm] = useState<
+    | { kind: 'brand'; brand: string }
+    | { kind: 'dataset'; id: string; name: string }
+    | { kind: 'all' }
+    | null
+  >(null)
 
   // active dataset from storage (last upload / history pick).
   const stored = state.datasets.find((d) => d.id === state.activeId) ?? state.datasets[0] ?? null
@@ -88,7 +97,28 @@ export default function App() {
     setShowHistory(false)
   }
   function handleDeleteHistory(id: string) {
-    setState((s) => removeRawDataset(s, id))
+    const ds = state.datasets.find((d) => d.id === id)
+    setConfirm({ kind: 'dataset', id, name: ds?.name ?? 'dataset ini' })
+  }
+  function handleDeleteBrand(brand: string) {
+    setConfirm({ kind: 'brand', brand })
+  }
+  function handleDeleteAll() {
+    setConfirm({ kind: 'all' })
+  }
+  function applyConfirm() {
+    if (!confirm) return
+    if (confirm.kind === 'brand') {
+      setState((s) => removeRawByBrand(s, confirm.brand))
+      setOverride(null)
+    } else if (confirm.kind === 'dataset') {
+      setState((s) => removeRawDataset(s, confirm.id))
+    } else if (confirm.kind === 'all') {
+      setState(() => clearAllRaw())
+      setOverride(null)
+      setShowHistory(false)
+    }
+    setConfirm(null)
   }
 
   const historyMeta: DatasetMeta[] = state.datasets.map((d) => ({
@@ -119,6 +149,7 @@ export default function App() {
           if (latest) setOverride({ brand, period: periodKeyOf(latest) })
           else if (selected) setOverride({ brand, period: selected.period })
         }}
+        onDeleteBrand={handleDeleteBrand}
         onChangeMonth={(month) => {
           if (!selected) return
           setOverride({ brand: selected.brand, period: { ...selected.period, month } })
@@ -164,6 +195,31 @@ export default function App() {
         activeId={activeDs?.id ?? state.activeId}
         onSelect={handleSelectHistory}
         onDelete={handleDeleteHistory}
+        onDeleteAll={historyMeta.length > 0 ? handleDeleteAll : undefined}
+      />
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={
+          confirm?.kind === 'brand'
+            ? `Hapus semua data brand "${confirm.brand}"?`
+            : confirm?.kind === 'dataset'
+              ? `Hapus dataset "${confirm.name}"?`
+              : confirm?.kind === 'all'
+                ? 'Hapus seluruh data dashboard?'
+                : ''
+        }
+        description={
+          confirm?.kind === 'brand'
+            ? `Semua periode (bulan/tahun) untuk brand ini akan dihapus dari browser. Tindakan ini tidak bisa di-undo.`
+            : confirm?.kind === 'dataset'
+              ? 'Hanya periode ini yang dihapus. Periode lain di brand sama tetap aman.'
+              : confirm?.kind === 'all'
+                ? 'Semua dataset (semua brand & periode) akan dihapus dari browser. Tindakan ini tidak bisa di-undo.'
+                : ''
+        }
+        onCancel={() => setConfirm(null)}
+        onConfirm={applyConfirm}
       />
     </div>
   )
@@ -206,6 +262,7 @@ interface TopBarProps {
   onChangeBrand: (brand: string) => void
   onChangeMonth: (month: number) => void
   onChangeYear: (year: number) => void
+  onDeleteBrand: (brand: string) => void
 }
 
 function TopBar({
@@ -218,6 +275,7 @@ function TopBar({
   onChangeBrand,
   onChangeMonth,
   onChangeYear,
+  onDeleteBrand,
 }: TopBarProps) {
   // Years that have data for the currently selected brand
   const yearsForBrand = useMemo(() => {
@@ -253,6 +311,7 @@ function TopBar({
               activeBrand={selected.brand}
               brandList={brandList}
               onChange={onChangeBrand}
+              onDelete={onDeleteBrand}
             />
             <MonthSelector
               activeMonth={selected.period.month}
@@ -294,10 +353,12 @@ function BrandSelector({
   activeBrand,
   brandList,
   onChange,
+  onDelete,
 }: {
   activeBrand: string
   brandList: BrandGroup[]
   onChange: (brand: string) => void
+  onDelete: (brand: string) => void
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -312,25 +373,46 @@ function BrandSelector({
         <ChevronDown className={cn('h-3.5 w-3.5 text-muted transition', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 w-64 card p-1 z-30 max-h-80 overflow-y-auto">
+        <div className="absolute left-0 top-full mt-1 w-72 card p-1 z-30 max-h-80 overflow-y-auto">
           {brandList.map((b) => {
             const active = b.brand === activeBrand
             return (
-              <button
+              <div
                 key={b.brand}
                 className={cn(
-                  'w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition',
+                  'group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition',
                   active ? 'bg-accent/10 text-white' : 'text-muted hover:bg-bg-elev hover:text-white',
                 )}
-                onClick={() => {
-                  onChange(b.brand)
-                  setOpen(false)
-                }}
               >
-                <span className={cn('h-2 w-2 rounded-full', active ? 'bg-accent' : 'bg-muted')} />
-                <span className="flex-1">{b.brand}</span>
-                <span className="text-[11px] text-muted">{b.list.length}×</span>
-              </button>
+                <button
+                  className="flex-1 flex items-center gap-2 text-left min-w-0"
+                  onMouseDown={(e) => {
+                    // prevent button blur from closing the dropdown before click fires
+                    e.preventDefault()
+                  }}
+                  onClick={() => {
+                    onChange(b.brand)
+                    setOpen(false)
+                  }}
+                >
+                  <span className={cn('h-2 w-2 rounded-full shrink-0', active ? 'bg-accent' : 'bg-muted')} />
+                  <span className="flex-1 truncate">{b.brand}</span>
+                  <span className="text-[11px] text-muted shrink-0">{b.list.length}×</span>
+                </button>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-rose-500/10 text-muted hover:text-rose-400 shrink-0"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(b.brand)
+                    setOpen(false)
+                  }}
+                  aria-label={`Hapus brand ${b.brand}`}
+                  title={`Hapus brand ${b.brand}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             )
           })}
         </div>

@@ -8,6 +8,7 @@ interface HistoryDialogProps {
   activeId: string | null
   onSelect: (id: string) => void
   onDelete: (id: string) => void
+  onDeleteAll?: () => void
 }
 
 export function HistoryDialog({
@@ -17,6 +18,7 @@ export function HistoryDialog({
   activeId,
   onSelect,
   onDelete,
+  onDeleteAll,
 }: HistoryDialogProps) {
   if (!open) return null
   return (
@@ -36,7 +38,7 @@ export function HistoryDialog({
           <Clock className="h-5 w-5 text-accent" /> Sync History
         </h2>
         <p className="text-sm text-muted mt-1">
-          Daftar upload sebelumnya. Klik untuk aktifkan.
+          Daftar upload sebelumnya. Klik untuk aktifkan, atau hapus per-dataset / semua data.
         </p>
         <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1">
           {history.length === 0 ? (
@@ -75,6 +77,20 @@ export function HistoryDialog({
             </ul>
           )}
         </div>
+        {onDeleteAll && history.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-border flex items-center justify-between gap-3">
+            <p className="text-xs text-muted">
+              Hapus semua dataset (semua brand & periode) sekaligus.
+            </p>
+            <button
+              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 transition"
+              onClick={onDeleteAll}
+            >
+              <Trash2 className="h-4 w-4" />
+              Hapus semua data
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
