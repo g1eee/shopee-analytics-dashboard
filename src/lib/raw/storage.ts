@@ -1,7 +1,41 @@
+import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
 import type { RawDataset } from './types'
 
 const KEY = 'shopee-raw-state-v1'
-const MAX_DATASETS = 12
+const MAX_DATASETS = 36
+
+/**
+ * Storage encoding:
+ *  - New entries are stored as `lzu:` + compressToUTF16(JSON). UTF-16 encoding is the
+ *    most space-efficient for localStorage (which is itself UTF-16), giving roughly
+ *    4-6x compression for our highly-repetitive product/ad payloads.
+ *  - Legacy entries (plain JSON, written by older builds) are detected by the leading
+ *    `{` and read with JSON.parse. They are rewritten compressed on next save.
+ */
+const COMPRESSED_PREFIX = 'lzu:'
+
+function decode(raw: string): RawAppState | null {
+  try {
+    if (raw.startsWith('{')) {
+      return JSON.parse(raw) as RawAppState
+    }
+    if (raw.startsWith(COMPRESSED_PREFIX)) {
+      const decompressed = decompressFromUTF16(raw.slice(COMPRESSED_PREFIX.length))
+      if (!decompressed) return null
+      return JSON.parse(decompressed) as RawAppState
+    }
+    // Unknown format — last resort try decompress
+    const decompressed = decompressFromUTF16(raw)
+    if (decompressed) return JSON.parse(decompressed) as RawAppState
+  } catch {
+    return null
+  }
+  return null
+}
+
+function encode(state: RawAppState): string {
+  return COMPRESSED_PREFIX + compressToUTF16(JSON.stringify(state))
+}
 
 export interface RawAppState {
   datasets: RawDataset[]
@@ -20,7 +54,8 @@ export function loadRawState(): RawAppState {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return { datasets: [], activeId: null }
-    const parsed = JSON.parse(raw) as RawAppState
+    const parsed = decode(raw)
+    if (!parsed) return { datasets: [], activeId: null }
     if (!parsed.datasets) parsed.datasets = []
     return parsed
   } catch {
@@ -49,7 +84,7 @@ export function saveRawStateSafe(state: RawAppState): { state: RawAppState; resu
   let trimmed = 0
   while (true) {
     try {
-      localStorage.setItem(KEY, JSON.stringify(attempt))
+      localStorage.setItem(KEY, encode(attempt))
       const result: SaveResult = trimmed > 0 ? { ok: true, trimmed } : { ok: true }
       return { state: attempt, result }
     } catch (e) {
