@@ -70,7 +70,7 @@ export interface RawDataset {
   brand: string
   storeName?: string
   uploadedAt: string                  // ISO
-  period?: { start?: string; end?: string }
+  period?: { year?: number; month?: number; start?: string; end?: string }
   produk?: ProdukRow[]
   ads?: AdsRow[]
   stock?: StockProduct[]
@@ -89,7 +89,7 @@ export interface ParsedFile {
   stock?: StockProduct[]
   meta?: {
     cabangNames?: string[]
-    period?: { start?: string; end?: string }
+    period?: { year?: number; month?: number; start?: string; end?: string }
     storeName?: string
   }
 }

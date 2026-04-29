@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import {
   AlertTriangle,
@@ -13,6 +13,11 @@ import {
 } from 'lucide-react'
 import { parseAnyFile } from '../lib/raw/parsers'
 import type { ParsedFile, RawDataset } from '../lib/raw/types'
+import {
+  MONTH_NAMES_ID,
+  periodToRange,
+  type PeriodKey,
+} from '../lib/raw/period'
 import { cn } from '../lib/utils'
 
 interface UploadRawDialogProps {
@@ -21,6 +26,8 @@ interface UploadRawDialogProps {
   onLoaded: (ds: RawDataset) => void
   onLoadSample: () => void
   previousBrands?: string[]
+  defaultBrand?: string
+  defaultPeriod?: PeriodKey
 }
 
 type Slot = { kind: 'produk' | 'ads' | 'stock'; label: string; description: string; icon: typeof Package }
@@ -52,13 +59,36 @@ export function UploadRawDialog({
   onLoaded,
   onLoadSample,
   previousBrands = [],
+  defaultBrand,
+  defaultPeriod,
 }: UploadRawDialogProps) {
   const [parsed, setParsed] = useState<Record<string, ParsedFile>>({})
   const [parsing, setParsing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [brandLabelInput, setBrandLabelInput] = useState<string | null>(null)
-  // brandLabel: user-input takes priority; otherwise auto-derive from parsed files.
-  const brandLabel = brandLabelInput ?? deriveBrand(parsed) ?? ''
+  const [periodInput, setPeriodInput] = useState<PeriodKey | null>(null)
+
+  // brandLabel: user-input > parsed > header default
+  const brandLabel = brandLabelInput ?? deriveBrand(parsed) ?? defaultBrand ?? ''
+
+  // detected period from parsed files
+  const detectedPeriod = useMemo<PeriodKey | null>(() => {
+    const p = parsed.ads?.meta?.period ?? parsed.produk?.meta?.period
+    if (!p) return null
+    if (p.year && p.month) return { year: p.year, month: p.month }
+    if (p.start) {
+      const m = p.start.match(/^(\d{4})-(\d{1,2})/)
+      if (m) return { year: Number(m[1]), month: Number(m[2]) }
+      const eu = p.start.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/)
+      if (eu) return { year: Number(eu[3]), month: Number(eu[2]) }
+    }
+    return null
+  }, [parsed])
+  const now = new Date()
+  const period: PeriodKey =
+    periodInput ??
+    detectedPeriod ??
+    defaultPeriod ?? { year: now.getFullYear(), month: now.getMonth() + 1 }
 
   const handleFiles = useCallback(async (files: File[]) => {
     if (!files.length) return
@@ -102,18 +132,28 @@ export function UploadRawDialog({
     setParsed({})
     setError(null)
     setBrandLabelInput(null)
+    setPeriodInput(null)
   }
 
   function confirm() {
     if (!canConfirm) return
     const finalBrand = brandLabel.trim() || 'Tanpa Brand'
+    // Build period: stamp with chosen (year, month). Keep file-detected start/end if present, otherwise compute from month range.
+    const filePeriod = parsed.ads?.meta?.period ?? parsed.produk?.meta?.period
+    const range = periodToRange(period)
+    const finalPeriod = {
+      year: period.year,
+      month: period.month,
+      start: filePeriod?.start ?? range.start,
+      end: filePeriod?.end ?? range.end,
+    }
     const ds: RawDataset = {
       id: 'ds-' + Date.now(),
-      name: deriveName(parsed, finalBrand),
+      name: deriveName(finalBrand, period),
       brand: finalBrand,
       storeName: parsed.ads?.meta?.storeName,
       uploadedAt: new Date().toISOString(),
-      period: parsed.ads?.meta?.period ?? parsed.produk?.meta?.period,
+      period: finalPeriod,
       cabangNames: parsed.stock?.meta?.cabangNames,
       produk: parsed.produk?.produk,
       ads: parsed.ads?.ads,
@@ -194,6 +234,50 @@ export function UploadRawDialog({
           </p>
         </div>
 
+        <div className="mt-4">
+          <label className="label text-muted">Periode Data</label>
+          <div className="mt-1 flex flex-wrap gap-2 items-center">
+            <select
+              value={period.month}
+              onChange={(e) => setPeriodInput({ ...period, month: Number(e.target.value) })}
+              className="rounded-xl border border-border bg-bg-elev px-3 py-2 text-sm text-white focus:outline-none focus:border-accent"
+            >
+              {MONTH_NAMES_ID.map((m, i) => (
+                <option key={m} value={i + 1}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min={2000}
+              max={2100}
+              value={period.year}
+              onChange={(e) =>
+                setPeriodInput({ ...period, year: Number(e.target.value) || period.year })
+              }
+              className="w-24 rounded-xl border border-border bg-bg-elev px-3 py-2 text-sm text-white focus:outline-none focus:border-accent"
+            />
+            {detectedPeriod &&
+              (detectedPeriod.year !== period.year || detectedPeriod.month !== period.month) && (
+                <button
+                  type="button"
+                  className="pill bg-accent/10 text-accent border border-accent/30 hover:bg-accent/20"
+                  onClick={() => setPeriodInput(detectedPeriod)}
+                >
+                  Pakai dari file: {MONTH_NAMES_ID[detectedPeriod.month - 1]} {detectedPeriod.year}
+                </button>
+              )}
+          </div>
+          <p className="text-[11px] text-muted mt-1">
+            {detectedPeriod
+              ? 'Terdeteksi otomatis dari file. Edit jika perlu.'
+              : defaultPeriod
+                ? 'Default dari periode aktif di header. Edit jika perlu.'
+                : 'Default ke bulan & tahun saat ini.'}
+          </p>
+        </div>
+
         <div className="mt-4 grid sm:grid-cols-3 gap-2">
           {SLOTS.map((slot) => {
             const p = parsed[slot.kind]
@@ -271,12 +355,9 @@ export function UploadRawDialog({
   )
 }
 
-function deriveName(parsed: Record<string, ParsedFile>, brand: string): string {
-  const period = parsed.ads?.meta?.period ?? parsed.produk?.meta?.period
-  if (period?.start && period?.end) {
-    return `${brand} · ${period.start} → ${period.end}`
-  }
-  return `${brand} · ${new Date().toLocaleDateString('id-ID')}`
+function deriveName(brand: string, period: PeriodKey): string {
+  const m = MONTH_NAMES_ID[period.month - 1]
+  return `${brand} · ${m} ${period.year}`
 }
 
 function deriveBrand(parsed: Record<string, ParsedFile>): string | undefined {

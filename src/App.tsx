@@ -12,18 +12,41 @@ import {
   setActiveRaw,
 } from './lib/raw/storage'
 import type { RawDataset } from './lib/raw/types'
+import {
+  MONTH_NAMES_ID,
+  comparePeriod,
+  periodKeyOf,
+  periodLabel,
+  samePeriod,
+  type PeriodKey,
+} from './lib/raw/period'
 import type { DatasetMeta } from './lib/types'
 import { cn } from './lib/utils'
+
+interface BrandGroup {
+  brand: string
+  list: RawDataset[]
+}
 
 export default function App() {
   const [state, setState] = useState(() => loadRawState())
   const [showUpload, setShowUpload] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
-  const active = state.datasets.find((d) => d.id === state.activeId) ?? state.datasets[0]
+  // active dataset from storage (last upload / history pick).
+  const stored = state.datasets.find((d) => d.id === state.activeId) ?? state.datasets[0] ?? null
 
-  // Group datasets by brand for selector + period selector
-  const brandList = useMemo(() => {
+  // Optional user override of (brand, period). Cleared whenever storage's active dataset changes.
+  const [override, setOverride] = useState<{ brand: string; period: PeriodKey } | null>(null)
+
+  // Selected (brand, period) shown in the header — override wins, otherwise follow stored.
+  const selected: { brand: string; period: PeriodKey } | null = useMemo(
+    () => override ?? (stored ? { brand: stored.brand, period: periodKeyOf(stored) } : null),
+    [override, stored],
+  )
+
+  // Group datasets by brand.
+  const brandList: BrandGroup[] = useMemo(() => {
     const map = new Map<string, RawDataset[]>()
     for (const d of state.datasets) {
       const b = d.brand || 'Tanpa Brand'
@@ -33,26 +56,35 @@ export default function App() {
     return [...map.entries()].map(([brand, list]) => ({ brand, list }))
   }, [state.datasets])
 
-  // Find immediate previous dataset for the same brand (for delta comparison)
+  // Lookup the actual dataset for the currently selected (brand, period).
+  const activeDs = useMemo(() => {
+    if (!selected) return null
+    const sameBrand = state.datasets.filter((d) => d.brand === selected.brand)
+    return sameBrand.find((d) => samePeriod(periodKeyOf(d), selected.period)) ?? null
+  }, [state.datasets, selected])
+
+  // Previous-period dataset for the same brand (for delta arrows).
   const prevDs = useMemo(() => {
-    if (!active) return null
-    const same = state.datasets.filter((d) => d.brand === active.brand && d.id !== active.id)
-    // sort by period.end if available, else by uploadedAt — pick most recent BEFORE active
-    same.sort((a, b) => sortKey(b).localeCompare(sortKey(a)))
-    const activeKey = sortKey(active)
-    return same.find((d) => sortKey(d).localeCompare(activeKey) < 0) ?? null
-  }, [state.datasets, active])
+    if (!selected) return null
+    const sameBrand = state.datasets
+      .filter((d) => d.brand === selected.brand)
+      .sort((a, b) => comparePeriod(periodKeyOf(b), periodKeyOf(a))) // desc
+    return sameBrand.find((d) => comparePeriod(periodKeyOf(d), selected.period) < 0) ?? null
+  }, [state.datasets, selected])
 
   function handleLoaded(ds: RawDataset) {
     setState((s) => addRawDataset(s, ds))
+    setOverride(null)
   }
   function handleSample() {
     const ds = generateRawSample()
     setState((s) => addRawDataset(s, ds))
+    setOverride(null)
     setShowUpload(false)
   }
   function handleSelectHistory(id: string) {
     setState((s) => setActiveRaw(s, id))
+    setOverride(null)
     setShowHistory(false)
   }
   function handleDeleteHistory(id: string) {
@@ -68,6 +100,8 @@ export default function App() {
     range: { start: d.period?.start ?? '', end: d.period?.end ?? '' },
   }))
 
+  const noData = state.datasets.length === 0
+
   return (
     <div className="min-h-screen flex flex-col">
       <TopBar
@@ -75,16 +109,37 @@ export default function App() {
         onSample={handleSample}
         onHistory={() => setShowHistory(true)}
         canHistory={state.datasets.length > 0}
-        active={active ?? null}
+        selected={selected}
         brandList={brandList}
-        onSelectDataset={(id) => setState((s) => setActiveRaw(s, id))}
+        onChangeBrand={(brand) => {
+          // when brand changes, default to the latest period for that brand
+          const list = brandList.find((b) => b.brand === brand)?.list ?? []
+          const sorted = [...list].sort((a, b) => comparePeriod(periodKeyOf(b), periodKeyOf(a)))
+          const latest = sorted[0]
+          if (latest) setOverride({ brand, period: periodKeyOf(latest) })
+          else if (selected) setOverride({ brand, period: selected.period })
+        }}
+        onChangeMonth={(month) => {
+          if (!selected) return
+          setOverride({ brand: selected.brand, period: { ...selected.period, month } })
+        }}
+        onChangeYear={(year) => {
+          if (!selected) return
+          setOverride({ brand: selected.brand, period: { ...selected.period, year } })
+        }}
       />
 
       <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 pb-10 mt-4">
-        {!active ? (
+        {noData ? (
           <EmptyState onUpload={() => setShowUpload(true)} onLoadSample={handleSample} />
+        ) : activeDs ? (
+          <SummaryView ds={activeDs} prevDs={prevDs} />
         ) : (
-          <SummaryView ds={active} prevDs={prevDs} />
+          <NoPeriodData
+            brand={selected?.brand}
+            period={selected?.period}
+            onUpload={() => setShowUpload(true)}
+          />
         )}
       </main>
 
@@ -98,13 +153,15 @@ export default function App() {
         onLoaded={handleLoaded}
         onLoadSample={handleSample}
         previousBrands={brandList.map((b) => b.brand)}
+        defaultBrand={selected?.brand}
+        defaultPeriod={selected?.period}
       />
 
       <HistoryDialog
         open={showHistory}
         onClose={() => setShowHistory(false)}
         history={historyMeta}
-        activeId={state.activeId}
+        activeId={activeDs?.id ?? state.activeId}
         onSelect={handleSelectHistory}
         onDelete={handleDeleteHistory}
       />
@@ -112,8 +169,31 @@ export default function App() {
   )
 }
 
-function sortKey(d: RawDataset): string {
-  return d.period?.end ?? d.period?.start ?? d.uploadedAt
+function NoPeriodData({
+  brand,
+  period,
+  onUpload,
+}: {
+  brand?: string
+  period?: PeriodKey
+  onUpload: () => void
+}) {
+  return (
+    <div className="card p-10 text-center">
+      <Calendar className="h-10 w-10 text-accent mx-auto" />
+      <h2 className="text-lg font-semibold text-white mt-3">
+        Belum ada data{period ? ` untuk ${periodLabel(period)}` : ''}
+        {brand ? ` (${brand})` : ''}
+      </h2>
+      <p className="text-sm text-muted mt-1">
+        Upload file Shopee untuk periode ini, atau pindah ke bulan/tahun lain di header.
+      </p>
+      <button className="btn-primary mt-4 mx-auto" onClick={onUpload}>
+        <Upload className="h-4 w-4" />
+        Upload Data
+      </button>
+    </div>
+  )
 }
 
 interface TopBarProps {
@@ -121,9 +201,11 @@ interface TopBarProps {
   onSample: () => void
   onHistory: () => void
   canHistory: boolean
-  active: RawDataset | null
-  brandList: { brand: string; list: RawDataset[] }[]
-  onSelectDataset: (id: string) => void
+  selected: { brand: string; period: PeriodKey } | null
+  brandList: BrandGroup[]
+  onChangeBrand: (brand: string) => void
+  onChangeMonth: (month: number) => void
+  onChangeYear: (year: number) => void
 }
 
 function TopBar({
@@ -131,10 +213,27 @@ function TopBar({
   onSample,
   onHistory,
   canHistory,
-  active,
+  selected,
   brandList,
-  onSelectDataset,
+  onChangeBrand,
+  onChangeMonth,
+  onChangeYear,
 }: TopBarProps) {
+  // Years that have data for the currently selected brand
+  const yearsForBrand = useMemo(() => {
+    if (!selected) return []
+    const list = brandList.find((b) => b.brand === selected.brand)?.list ?? []
+    const years = new Set(list.map((d) => periodKeyOf(d).year))
+    return [...years].sort((a, b) => b - a)
+  }, [brandList, selected])
+
+  // Months with data for the (brand, year)
+  const monthsWithDataForYear = useMemo(() => {
+    if (!selected) return new Set<number>()
+    const list = brandList.find((b) => b.brand === selected.brand)?.list ?? []
+    return new Set(list.filter((d) => periodKeyOf(d).year === selected.period.year).map((d) => periodKeyOf(d).month))
+  }, [brandList, selected])
+
   return (
     <header className="sticky top-0 z-20 backdrop-blur-md bg-bg/80 border-b border-border">
       <div className="max-w-[1400px] mx-auto flex flex-wrap items-center gap-3 px-4 sm:px-6 py-3">
@@ -148,18 +247,22 @@ function TopBar({
           </p>
         </div>
 
-        {active && (
-          <div className="flex items-center gap-2 ml-2 sm:ml-4">
+        {selected && (
+          <div className="flex items-center gap-2 ml-2 sm:ml-4 flex-wrap">
             <BrandSelector
-              activeId={active.id}
+              activeBrand={selected.brand}
               brandList={brandList}
-              onSelect={onSelectDataset}
+              onChange={onChangeBrand}
             />
-            <PeriodSelector
-              activeBrand={active.brand}
-              activeId={active.id}
-              brandList={brandList}
-              onSelect={onSelectDataset}
+            <MonthSelector
+              activeMonth={selected.period.month}
+              monthsWithData={monthsWithDataForYear}
+              onChange={onChangeMonth}
+            />
+            <YearSelector
+              activeYear={selected.period.year}
+              yearsForBrand={yearsForBrand}
+              onChange={onChangeYear}
             />
           </div>
         )}
@@ -188,17 +291,15 @@ function TopBar({
 }
 
 function BrandSelector({
-  activeId,
+  activeBrand,
   brandList,
-  onSelect,
+  onChange,
 }: {
-  activeId: string
-  brandList: { brand: string; list: RawDataset[] }[]
-  onSelect: (id: string) => void
+  activeBrand: string
+  brandList: BrandGroup[]
+  onChange: (brand: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const active = brandList.flatMap((b) => b.list).find((d) => d.id === activeId)
-  if (!active) return null
   return (
     <div className="relative">
       <button
@@ -207,33 +308,26 @@ function BrandSelector({
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       >
         <span className="h-2 w-2 rounded-full bg-accent" />
-        <span className="font-medium text-white">{active.brand}</span>
+        <span className="font-medium text-white">{activeBrand}</span>
         <ChevronDown className={cn('h-3.5 w-3.5 text-muted transition', open && 'rotate-180')} />
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 w-64 card p-1 z-30 max-h-80 overflow-y-auto">
           {brandList.map((b) => {
-            // pick latest dataset by sortKey for that brand
-            const latest = [...b.list].sort((a, c) => sortKey(c).localeCompare(sortKey(a)))[0]
-            const activeBrand = b.brand === active.brand
+            const active = b.brand === activeBrand
             return (
               <button
                 key={b.brand}
                 className={cn(
                   'w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition',
-                  activeBrand ? 'bg-accent/10 text-white' : 'text-muted hover:bg-bg-elev hover:text-white',
+                  active ? 'bg-accent/10 text-white' : 'text-muted hover:bg-bg-elev hover:text-white',
                 )}
                 onClick={() => {
-                  onSelect(latest.id)
+                  onChange(b.brand)
                   setOpen(false)
                 }}
               >
-                <span
-                  className={cn(
-                    'h-2 w-2 rounded-full',
-                    activeBrand ? 'bg-accent' : 'bg-muted',
-                  )}
-                />
+                <span className={cn('h-2 w-2 rounded-full', active ? 'bg-accent' : 'bg-muted')} />
                 <span className="flex-1">{b.brand}</span>
                 <span className="text-[11px] text-muted">{b.list.length}×</span>
               </button>
@@ -245,28 +339,16 @@ function BrandSelector({
   )
 }
 
-function PeriodSelector({
-  activeBrand,
-  activeId,
-  brandList,
-  onSelect,
+function MonthSelector({
+  activeMonth,
+  monthsWithData,
+  onChange,
 }: {
-  activeBrand: string
-  activeId: string
-  brandList: { brand: string; list: RawDataset[] }[]
-  onSelect: (id: string) => void
+  activeMonth: number
+  monthsWithData: Set<number>
+  onChange: (month: number) => void
 }) {
   const [open, setOpen] = useState(false)
-  const list = useMemo(
-    () =>
-      [...(brandList.find((b) => b.brand === activeBrand)?.list ?? [])].sort(
-        (a, b) => sortKey(b).localeCompare(sortKey(a)),
-      ),
-    [brandList, activeBrand],
-  )
-  const active = list.find((d) => d.id === activeId)
-  if (!active) return null
-  const label = formatPeriodShort(active)
   return (
     <div className="relative">
       <button
@@ -275,46 +357,98 @@ function PeriodSelector({
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       >
         <Calendar className="h-3.5 w-3.5 text-muted" />
-        <span className="text-white">{label}</span>
-        {list.length > 1 && (
-          <ChevronDown className={cn('h-3.5 w-3.5 text-muted transition', open && 'rotate-180')} />
-        )}
+        <span className="text-white">{MONTH_NAMES_ID[activeMonth - 1]}</span>
+        <ChevronDown className={cn('h-3.5 w-3.5 text-muted transition', open && 'rotate-180')} />
       </button>
-      {open && list.length > 1 && (
-        <div className="absolute left-0 top-full mt-1 w-72 card p-1 z-30 max-h-80 overflow-y-auto">
-          {list.map((d) => (
-            <button
-              key={d.id}
-              className={cn(
-                'w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition',
-                d.id === activeId
-                  ? 'bg-accent/10 text-white'
-                  : 'text-muted hover:bg-bg-elev hover:text-white',
-              )}
-              onClick={() => {
-                onSelect(d.id)
-                setOpen(false)
-              }}
-            >
-              <Calendar className="h-3.5 w-3.5 text-muted" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm truncate">{formatPeriodShort(d)}</p>
-                <p className="text-[11px] text-muted">
-                  Diupload {new Date(d.uploadedAt).toLocaleDateString('id-ID')}
-                </p>
-              </div>
-            </button>
-          ))}
+      {open && (
+        <div className="absolute left-0 top-full mt-1 w-44 card p-1 z-30 grid grid-cols-2 gap-0.5">
+          {MONTH_NAMES_ID.map((name, i) => {
+            const month = i + 1
+            const active = month === activeMonth
+            const hasData = monthsWithData.has(month)
+            return (
+              <button
+                key={month}
+                className={cn(
+                  'rounded-lg px-2 py-1.5 text-xs transition flex items-center gap-1.5',
+                  active
+                    ? 'bg-accent/15 text-accent font-medium'
+                    : hasData
+                      ? 'text-white hover:bg-bg-elev'
+                      : 'text-muted hover:bg-bg-elev hover:text-white',
+                )}
+                onClick={() => {
+                  onChange(month)
+                  setOpen(false)
+                }}
+              >
+                {hasData && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                {name.slice(0, 3)}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
   )
 }
 
-function formatPeriodShort(d: RawDataset): string {
-  if (d.period?.start && d.period?.end) {
-    return `${d.period.start} → ${d.period.end}`
-  }
-  if (d.period?.start) return d.period.start
-  return new Date(d.uploadedAt).toLocaleDateString('id-ID')
+function YearSelector({
+  activeYear,
+  yearsForBrand,
+  onChange,
+}: {
+  activeYear: number
+  yearsForBrand: number[]
+  onChange: (year: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  // Always show: years with data + current ± 2
+  const candidate = useMemo(() => {
+    const set = new Set<number>(yearsForBrand)
+    const now = new Date().getFullYear()
+    for (let y = now - 2; y <= now + 1; y++) set.add(y)
+    set.add(activeYear)
+    return [...set].sort((a, b) => b - a)
+  }, [yearsForBrand, activeYear])
+  return (
+    <div className="relative">
+      <button
+        className="btn-ghost"
+        onClick={() => setOpen((o) => !o)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      >
+        <span className="text-white">{activeYear}</span>
+        <ChevronDown className={cn('h-3.5 w-3.5 text-muted transition', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 w-28 card p-1 z-30 max-h-72 overflow-y-auto">
+          {candidate.map((y) => {
+            const active = y === activeYear
+            const hasData = yearsForBrand.includes(y)
+            return (
+              <button
+                key={y}
+                className={cn(
+                  'w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition',
+                  active
+                    ? 'bg-accent/15 text-accent font-medium'
+                    : hasData
+                      ? 'text-white hover:bg-bg-elev'
+                      : 'text-muted hover:bg-bg-elev hover:text-white',
+                )}
+                onClick={() => {
+                  onChange(y)
+                  setOpen(false)
+                }}
+              >
+                {hasData && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                <span>{y}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
