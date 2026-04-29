@@ -186,10 +186,17 @@ export function actionItems(ds: RawDataset, opts?: { topN?: number; bestSellerN?
 
 // ---------- Recommendations ("Apa yang harus dilakuin") ----------
 
+export interface RecommendationItem {
+  name: string
+  metric?: string
+  sub?: string
+}
+
 export interface Recommendation {
   level: 'high' | 'medium' | 'low'
   title: string
   detail: string
+  items?: RecommendationItem[]
 }
 
 export function globalRecommendations(ds: RawDataset): Recommendation[] {
@@ -218,6 +225,11 @@ export function globalRecommendations(ds: RawDataset): Recommendation[] {
       level: 'high',
       title: `${bsLowStock.length} best-seller butuh refill stok`,
       detail: `Top SKU dengan stok kritis atau varian kosong: ${bsLowStock.slice(0, 3).map((s) => trim(s.produkName)).join('; ')}`,
+      items: bsLowStock.map((s) => ({
+        name: s.produkName,
+        metric: `Stok ${s.totalStock} · ${s.availabilityPct.toFixed(0)}% varian tersedia`,
+        sub: `Omzet ${formatIDR(s.omzet)} · ${s.variantCount} varian`,
+      })),
     })
   }
 
@@ -276,12 +288,16 @@ export function produkRecommendations(ds: RawDataset): Recommendation[] {
   const lowConverters = skus
     .filter((s) => s.dilihat >= 5000 && s.cvr < 0.3 && s.cvr > 0)
     .sort((a, b) => b.dilihat - a.dilihat)
-    .slice(0, 3)
   if (lowConverters.length > 0) {
     recs.push({
       level: 'medium',
       title: `${lowConverters.length} produk traffic tinggi, CVR rendah`,
-      detail: `Optimasi konten: ${lowConverters.map((s) => trim(s.produkName)).join('; ')}`,
+      detail: `Optimasi konten: ${lowConverters.slice(0, 3).map((s) => trim(s.produkName)).join('; ')}`,
+      items: lowConverters.map((s) => ({
+        name: s.produkName,
+        metric: `CVR ${s.cvr.toFixed(2)}%`,
+        sub: `Dilihat ${formatNum(s.dilihat)} · Pesanan ${formatNum(s.pesanan)}`,
+      })),
     })
   }
 
@@ -289,12 +305,16 @@ export function produkRecommendations(ds: RawDataset): Recommendation[] {
   const hidden = skus
     .filter((s) => s.cvr >= 1 && s.dilihat < 5000 && s.dilihat > 100)
     .sort((a, b) => b.cvr - a.cvr)
-    .slice(0, 3)
   if (hidden.length > 0) {
     recs.push({
       level: 'low',
       title: `${hidden.length} produk dengan CVR bagus tapi traffic kecil`,
-      detail: `Boost via iklan/feature di toko: ${hidden.map((s) => trim(s.produkName)).join('; ')}`,
+      detail: `Boost via iklan/feature di toko: ${hidden.slice(0, 3).map((s) => trim(s.produkName)).join('; ')}`,
+      items: hidden.map((s) => ({
+        name: s.produkName,
+        metric: `CVR ${s.cvr.toFixed(2)}%`,
+        sub: `Dilihat ${formatNum(s.dilihat)} · Omzet ${formatIDR(s.omzet)}`,
+      })),
     })
   }
 
@@ -340,12 +360,16 @@ export function iklanRecommendations(ds: RawDataset): Recommendation[] {
   const worstAds = (ds.ads ?? [])
     .filter((a) => a.biaya >= 500_000 && a.acos > 0.30)
     .sort((a, b) => b.acos - a.acos)
-    .slice(0, 3)
   if (worstAds.length > 0) {
     recs.push({
       level: 'high',
       title: `${worstAds.length} iklan dengan ACOS > 30%`,
-      detail: `Pertimbangkan pause: ${worstAds.map((a) => trim(a.namaIklan)).join('; ')}`,
+      detail: `Pertimbangkan pause: ${worstAds.slice(0, 3).map((a) => trim(a.namaIklan)).join('; ')}`,
+      items: worstAds.map((a) => ({
+        name: a.namaIklan,
+        metric: `ACOS ${(a.acos * 100).toFixed(1)}%`,
+        sub: `Spend ${formatIDR(a.biaya)} · Omzet ${formatIDR(a.omzet)} · ${a.jenisIklan}`,
+      })),
     })
   }
 
@@ -353,12 +377,16 @@ export function iklanRecommendations(ds: RawDataset): Recommendation[] {
   const noAds = skus
     .filter((s) => !s.ranAds && s.ctr >= 2 && s.omzet >= 1_000_000)
     .sort((a, b) => b.omzet - a.omzet)
-    .slice(0, 3)
   if (noAds.length > 0) {
     recs.push({
       level: 'medium',
       title: `${noAds.length} produk potensial belum diiklankan`,
-      detail: `CTR organic bagus, mulai iklan: ${noAds.map((s) => trim(s.produkName)).join('; ')}`,
+      detail: `CTR organic bagus, mulai iklan: ${noAds.slice(0, 3).map((s) => trim(s.produkName)).join('; ')}`,
+      items: noAds.map((s) => ({
+        name: s.produkName,
+        metric: `CTR ${s.ctr.toFixed(2)}%`,
+        sub: `Omzet ${formatIDR(s.omzet)} · Stok ${formatNum(s.totalStock)}`,
+      })),
     })
   }
 
@@ -381,6 +409,21 @@ function priority(l: Recommendation['level']): number {
 function trim(s: string, max = 40): string {
   if (!s) return ''
   return s.length <= max ? s : s.slice(0, max - 1).trimEnd() + '…'
+}
+
+function formatIDR(v: number): string {
+  if (!isFinite(v) || v === 0) return 'Rp 0'
+  if (Math.abs(v) >= 1_000_000_000) return `Rp ${(v / 1_000_000_000).toFixed(1)}M`
+  if (Math.abs(v) >= 1_000_000) return `Rp ${(v / 1_000_000).toFixed(1)}jt`
+  if (Math.abs(v) >= 1_000) return `Rp ${(v / 1_000).toFixed(0)}rb`
+  return `Rp ${Math.round(v)}`
+}
+
+function formatNum(v: number): string {
+  if (!isFinite(v)) return '0'
+  if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
+  if (Math.abs(v) >= 1_000) return `${(v / 1_000).toFixed(1)}K`
+  return Math.round(v).toString()
 }
 
 function sum(arr: number[]): number {

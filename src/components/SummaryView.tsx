@@ -644,44 +644,141 @@ function IklanTab({
 // ----- Reusable -----
 
 function RecommendationsCard({ recs }: { recs: Recommendation[] }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null)
+  const open = openIdx != null ? recs[openIdx] : null
+
   return (
     <div className="card p-4">
       <div className="flex items-center gap-2">
         <Lightbulb className="h-4 w-4 text-amber-300" />
         <h3 className="text-sm font-semibold text-white">Apa yang harus dilakuin</h3>
       </div>
-      <p className="text-xs text-muted">Auto-summary insight & rekomendasi action</p>
+      <p className="text-xs text-muted">
+        Auto-summary insight & rekomendasi action.{' '}
+        <span className="text-amber-200/80">Klik kartu untuk lihat detail produk.</span>
+      </p>
       <ul className="mt-3 flex flex-col gap-2">
         {recs.length === 0 ? (
           <li className="text-xs text-muted text-center py-6">
             Tidak ada rekomendasi prioritas — performa sehat.
           </li>
         ) : (
-          recs.map((r, i) => (
-            <li
-              key={i}
-              className="rounded-xl border border-border bg-bg-elev p-3 flex items-start gap-3"
-            >
-              <span
+          recs.map((r, i) => {
+            const clickable = (r.items?.length ?? 0) > 0
+            return (
+              <li
+                key={i}
                 className={
-                  'pill border ' +
-                  (r.level === 'high'
-                    ? 'bg-rose-400/10 text-rose-300 border-rose-400/30'
-                    : r.level === 'medium'
-                      ? 'bg-amber-400/10 text-amber-300 border-amber-400/30'
-                      : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/30')
+                  'rounded-xl border bg-bg-elev p-3 flex items-start gap-3 transition ' +
+                  (clickable
+                    ? 'cursor-pointer border-border hover:border-accent/50 hover:bg-bg-hover'
+                    : 'border-border')
                 }
+                onClick={() => clickable && setOpenIdx(i)}
+                role={clickable ? 'button' : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onKeyDown={(e) => {
+                  if (clickable && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault()
+                    setOpenIdx(i)
+                  }
+                }}
               >
-                {r.level}
-              </span>
-              <div>
-                <p className="text-sm text-white font-medium leading-tight">{r.title}</p>
-                <p className="text-xs text-muted mt-1 leading-snug">{r.detail}</p>
-              </div>
-            </li>
-          ))
+                <span
+                  className={
+                    'pill border ' +
+                    (r.level === 'high'
+                      ? 'bg-rose-400/10 text-rose-300 border-rose-400/30'
+                      : r.level === 'medium'
+                        ? 'bg-amber-400/10 text-amber-300 border-amber-400/30'
+                        : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/30')
+                  }
+                >
+                  {r.level}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-white font-medium leading-tight flex-1">
+                      {r.title}
+                    </p>
+                    {clickable && (
+                      <span className="text-[11px] text-accent shrink-0">
+                        Lihat {r.items!.length} →
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted mt-1 leading-snug">{r.detail}</p>
+                </div>
+              </li>
+            )
+          })
         )}
       </ul>
+      <RecommendationDetailDialog rec={open} onClose={() => setOpenIdx(null)} />
+    </div>
+  )
+}
+
+function RecommendationDetailDialog({
+  rec,
+  onClose,
+}: {
+  rec: Recommendation | null
+  onClose: () => void
+}) {
+  if (!rec || !rec.items || rec.items.length === 0) return null
+  const levelClass =
+    rec.level === 'high'
+      ? 'bg-rose-400/10 text-rose-300 border-rose-400/30'
+      : rec.level === 'medium'
+        ? 'bg-amber-400/10 text-amber-300 border-amber-400/30'
+        : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/30'
+  return (
+    <div
+      className="fixed inset-0 z-[55] grid place-items-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="card w-full max-w-2xl p-6 relative max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-bg-hover text-muted"
+          onClick={onClose}
+          aria-label="Tutup"
+        >
+          ×
+        </button>
+        <div className="flex items-start gap-3 pr-8">
+          <span className={'pill border shrink-0 ' + levelClass}>{rec.level}</span>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-semibold text-white leading-tight">{rec.title}</h2>
+            <p className="text-sm text-muted mt-1">{rec.detail}</p>
+          </div>
+        </div>
+        <div className="mt-5 overflow-y-auto pr-1">
+          <p className="text-[11px] uppercase tracking-wider text-muted mb-2">
+            Detail produk ({rec.items.length})
+          </p>
+          <ul className="flex flex-col gap-2">
+            {rec.items.map((it, i) => (
+              <li
+                key={i}
+                className="rounded-xl border border-border bg-bg-elev px-3 py-2.5 flex items-start gap-3"
+              >
+                <span className="text-[11px] text-muted w-6 shrink-0 mt-0.5">#{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white break-words">{it.name}</p>
+                  {it.sub && <p className="text-[11px] text-muted mt-0.5">{it.sub}</p>}
+                </div>
+                {it.metric && (
+                  <span className="text-sm font-semibold text-white shrink-0">{it.metric}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </div>
   )
 }
