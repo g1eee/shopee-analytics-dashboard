@@ -230,6 +230,10 @@ export async function parseProdukXlsx(file: File): Promise<ParsedFile> {
     pesananDibuat: colIdx('Pesanan Dibuat'),
     pesananSiapDikirim: colIdx('Pesanan Siap Dikirim'),
     totalPembeli: colIdx('Total Pembeli (Pesanan Siap Dikirim)', 'Total Pembeli'),
+    pengunjungKunjungan: colIdx('Pengunjung Produk (Kunjungan)'),
+    pengunjungAtc: colIdx('Pengunjung Produk (Menambahkan Produk ke Keranjang)'),
+    ditambahKeKeranjang: colIdx('Dimasukkan ke Keranjang (Produk)'),
+    atcRate: colIdx('Tingkat Konversi Produk Dimasukkan ke Keranjang'),
   }
 
   const produk: ProdukRow[] = []
@@ -257,6 +261,10 @@ export async function parseProdukXlsx(file: File): Promise<ParsedFile> {
       pesananDibuat: parseIdNum(r[C.pesananDibuat]),
       pesananSiapDikirim: parseIdNum(r[C.pesananSiapDikirim]),
       totalPembeli: parseIdNum(r[C.totalPembeli]),
+      pengunjungKunjungan: parseIdNum(r[C.pengunjungKunjungan]),
+      pengunjungAtc: parseIdNum(r[C.pengunjungAtc]),
+      ditambahKeKeranjang: parseIdNum(r[C.ditambahKeKeranjang]),
+      atcRate: parseIdPct(r[C.atcRate]),
     })
   }
   return { kind: 'produk', fileName: file.name, produk }

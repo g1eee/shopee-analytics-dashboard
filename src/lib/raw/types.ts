@@ -18,6 +18,10 @@ export interface ProdukRow {
   pesananDibuat: number
   pesananSiapDikirim: number
   totalPembeli: number
+  pengunjungKunjungan: number         // Pengunjung Produk (Kunjungan)
+  pengunjungAtc: number               // Pengunjung Produk (Menambahkan Produk ke Keranjang)
+  ditambahKeKeranjang: number         // Dimasukkan ke Keranjang (Produk)
+  atcRate: number                     // Tingkat Konversi Produk Dimasukkan ke Keranjang (decimal)
   // Variant-level fallbacks (variant rows)
   kodeVariasi?: string
   namaVariasi?: string
@@ -63,7 +67,8 @@ export interface StockProduct {
 export interface RawDataset {
   id: string
   name: string
-  brand?: string
+  brand: string
+  storeName?: string
   uploadedAt: string                  // ISO
   period?: { start?: string; end?: string }
   produk?: ProdukRow[]
@@ -100,6 +105,17 @@ export interface SummaryKpi {
   acos: number                        // spend / omzet from ads * 100
   totalSku: number
   outOfStockSku: number
+  // Funnel
+  totalDilihat: number                // total impressions / Jumlah Produk Dilihat
+  totalKlik: number                   // total Produk Diklik
+  totalAtc: number                    // total Dimasukkan ke Keranjang
+  atcRateToko: number                 // %  ATC / Pengunjung
+  totalPengunjung: number             // total Pengunjung Produk (Kunjungan)
+  // Ads-only
+  cpc: number                         // adSpend / totalKlik (ad clicks)
+  adKlik: number                      // sum klik dari ads CSV
+  adKonversi: number                  // sum konversi dari ads CSV
+  adOmzet: number                     // sum omzet dari ads CSV
 }
 
 export interface AdTypeAgg {
@@ -119,9 +135,14 @@ export interface SkuRow {
   pesanan: number
   ctr: number                         // %
   cvr: number                         // %
+  atcRate: number                     // %
+  dilihat: number
+  klik: number
+  atc: number
   adSpend: number
   adOmzet: number
   acos: number                        // %
+  roas: number                        // x
   totalStock: number
   variantCount: number
   variantsWithStock: number
