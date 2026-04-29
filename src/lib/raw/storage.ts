@@ -51,3 +51,20 @@ export function setActiveRaw(state: RawAppState, id: string): RawAppState {
   saveRawState(next)
   return next
 }
+
+export function removeRawByBrand(state: RawAppState, brand: string): RawAppState {
+  const datasets = state.datasets.filter((d) => (d.brand || 'Tanpa Brand') !== brand)
+  const stillActive = datasets.some((d) => d.id === state.activeId)
+  const next: RawAppState = {
+    datasets,
+    activeId: stillActive ? state.activeId : datasets[0]?.id ?? null,
+  }
+  saveRawState(next)
+  return next
+}
+
+export function clearAllRaw(): RawAppState {
+  const next: RawAppState = { datasets: [], activeId: null }
+  saveRawState(next)
+  return next
+}
