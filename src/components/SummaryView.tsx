@@ -22,15 +22,13 @@ import {
   Bar,
   BarChart,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
   PieChart,
   Pie,
-  Scatter,
-  ScatterChart,
-  ZAxis,
   CartesianGrid,
 } from 'recharts'
 import type { RawDataset, SkuRow, SummaryKpi } from '../lib/raw/types'
@@ -74,6 +72,16 @@ export function SummaryView({ ds, prevDs }: Props) {
   const skus = useMemo(() => joinSkus(ds), [ds])
   const adAgg = useMemo(() => byAdType(ds.ads ?? []), [ds])
 
+  // Detect data missing visitor / ATC fields (i.e. uploaded by an older version of the parser).
+  const staleNoFunnel = useMemo(() => {
+    const parents = (ds.produk ?? []).filter((p) => p.isParent)
+    if (parents.length === 0) return false
+    const hasViews = parents.some((p) => (p.jumlahProdukDilihat ?? 0) > 0)
+    const hasVisitors = parents.some((p) => (p.pengunjungKunjungan ?? 0) > 0)
+    const hasAtc = parents.some((p) => (p.ditambahKeKeranjang ?? 0) > 0)
+    return hasViews && !hasVisitors && !hasAtc
+  }, [ds])
+
   const tabs: { value: TabKey; label: string; icon: React.ReactNode }[] = [
     { value: 'global', label: 'Global', icon: <LayoutDashboard className="h-4 w-4" /> },
     { value: 'produk', label: 'Performa Produk', icon: <Package className="h-4 w-4" /> },
@@ -82,6 +90,21 @@ export function SummaryView({ ds, prevDs }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {staleNoFunnel && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-3">
+          <AlertTriangle className="h-4 w-4 text-amber-300 mt-0.5 shrink-0" />
+          <div className="text-sm">
+            <p className="text-white font-medium">
+              Metrik Pengunjung & Add-to-Cart kosong di dataset ini
+            </p>
+            <p className="text-xs text-muted mt-0.5">
+              Dataset ini di-upload dengan parser versi lama yang belum baca kolom Pengunjung Produk
+              & Dimasukkan ke Keranjang. <span className="text-amber-200">Re-upload file Performa
+              Produk untuk periode ini</span> via tombol Upload — KPI funnel akan otomatis terisi.
+            </p>
+          </div>
+        </div>
+      )}
       <Tabs value={tab} onChange={(v) => setTab(v as TabKey)} items={tabs} />
       {tab === 'global' && <GlobalTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} />}
       {tab === 'produk' && <ProdukTab kpi={kpi} prevKpi={prevKpi} skus={skus} ds={ds} />}
@@ -388,17 +411,19 @@ function IklanTab({
 }) {
   const recs = useMemo(() => iklanRecommendations(ds), [ds])
   const actions = useMemo(() => actionItems(ds, { topN: 5, bestSellerN: 5 }), [ds])
-  // Scatter: SKUs that ran ads — Spend vs ROAS, sized by Omzet
-  const scatterData = useMemo(
+  // Top 10 SKU by ad spend — bar chart colored by ROAS health
+  const topSpendSkus = useMemo(
     () =>
       skus
-        .filter((s) => s.ranAds && s.adSpend >= 50_000 && isFinite(s.roas))
-        .slice(0, 200)
+        .filter((s) => s.ranAds && s.adSpend > 0)
+        .sort((a, b) => b.adSpend - a.adSpend)
+        .slice(0, 10)
         .map((s) => ({
-          x: s.adSpend,
-          y: Math.min(s.roas, 50),
-          z: s.omzet,
-          name: s.produkName,
+          name: shortName(s.produkName, 32),
+          fullName: s.produkName,
+          spend: s.adSpend,
+          roas: s.adSpend > 0 ? s.adOmzet / s.adSpend : 0,
+          omzet: s.adOmzet,
         })),
     [skus],
   )
@@ -509,54 +534,69 @@ function IklanTab({
       </div>
 
       <div className="card p-4">
-        <h3 className="text-sm font-semibold text-white">Spend vs ROAS per SKU</h3>
+        <h3 className="text-sm font-semibold text-white">Top 10 SKU by Ad Spend</h3>
         <p className="text-xs text-muted">
-          Setiap titik = 1 SKU dengan iklan. Posisi atas-kanan = ROAS bagus, spend besar (idealnya banyak).
-          Bawah-kanan = boros (spend besar, ROAS rendah, perlu pause).
+          Warna bar = kesehatan ROAS. Hijau = efisien (ROAS ≥ 10x), kuning = sedang (3–10x),
+          merah = boros (&lt; 3x, kandidat pause).
         </p>
-        <div className="mt-3 h-[300px]">
-          {scatterData.length === 0 ? (
+        <div className="mt-3" style={{ height: Math.max(280, topSpendSkus.length * 36) }}>
+          {topSpendSkus.length === 0 ? (
             <div className="text-sm text-muted py-16 text-center">Belum ada data iklan SKU.</div>
           ) : (
             <ResponsiveContainer>
-              <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2433" />
+              <BarChart
+                layout="vertical"
+                data={topSpendSkus}
+                margin={{ top: 8, right: 64, bottom: 8, left: 8 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2433" horizontal={false} />
                 <XAxis
                   type="number"
-                  dataKey="x"
-                  name="Spend"
                   tickFormatter={(v) => formatRupiah(Number(v), { compact: true })}
                   tick={{ fill: '#64748b', fontSize: 11 }}
                   stroke="#252a3d"
                 />
                 <YAxis
-                  type="number"
-                  dataKey="y"
-                  name="ROAS"
-                  tickFormatter={(v) => Number(v).toFixed(1) + 'x'}
-                  tick={{ fill: '#64748b', fontSize: 11 }}
+                  type="category"
+                  dataKey="name"
+                  width={220}
+                  tick={{ fill: '#cbd5e1', fontSize: 11 }}
                   stroke="#252a3d"
                 />
-                <ZAxis type="number" dataKey="z" range={[40, 600]} name="Omzet" />
                 <Tooltip
-                  cursor={{ strokeDasharray: '3 3' }}
+                  cursor={{ fill: 'rgba(167,139,250,0.06)' }}
                   contentStyle={{
                     background: '#11141f',
                     border: '1px solid #252a3d',
                     borderRadius: 12,
                   }}
-                  formatter={(v, name) => {
-                    if (name === 'Spend' || name === 'Omzet') return formatRupiah(Number(v), { compact: true })
-                    if (name === 'ROAS') return Number(v).toFixed(2) + 'x'
+                  formatter={(v, name, p) => {
+                    if (name === 'spend') {
+                      const r = (p.payload as { roas: number }).roas
+                      return [
+                        `${formatRupiah(Number(v), { compact: true })} · ROAS ${r.toFixed(2)}x`,
+                        'Spend',
+                      ]
+                    }
                     return v
                   }}
-                  labelFormatter={(_, p) => {
-                    const d = (p?.[0]?.payload ?? {}) as { name?: string }
-                    return d.name ?? ''
+                  labelFormatter={(_, items) => {
+                    const d = (items?.[0]?.payload ?? {}) as { fullName?: string }
+                    return d.fullName ?? ''
                   }}
                 />
-                <Scatter data={scatterData} fill="#a78bfa" fillOpacity={0.7} />
-              </ScatterChart>
+                <Bar dataKey="spend" radius={[0, 6, 6, 0]}>
+                  {topSpendSkus.map((d, i) => (
+                    <Cell key={i} fill={roasColor(d.roas)} />
+                  ))}
+                  <LabelList
+                    dataKey="roas"
+                    position="right"
+                    formatter={(v) => (typeof v === 'number' ? v.toFixed(1) + 'x' : '')}
+                    style={{ fill: '#cbd5e1', fontSize: 11 }}
+                  />
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           )}
         </div>
@@ -767,5 +807,12 @@ function acosColor(acos: number): string {
   if (!isFinite(acos) || acos <= 0) return '#475569'
   if (acos <= 10) return '#34d399'
   if (acos <= 20) return '#f59e0b'
+  return '#f43f5e'
+}
+
+function roasColor(roas: number): string {
+  if (!isFinite(roas) || roas <= 0) return '#475569'
+  if (roas >= 10) return '#34d399'
+  if (roas >= 3) return '#f59e0b'
   return '#f43f5e'
 }
