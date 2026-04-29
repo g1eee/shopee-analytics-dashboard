@@ -373,19 +373,23 @@ export function iklanRecommendations(ds: RawDataset): Recommendation[] {
     })
   }
 
-  // Potential SKUs (organic CTR good, no ads)
+  // Potential = CVR tinggi tapi traffic masih rendah, dan belum diiklankan.
+  // Aktifin via iklan biar trafficnya naik — CVR-nya udah terbukti bagus.
   const noAds = skus
-    .filter((s) => !s.ranAds && s.ctr >= 2 && s.omzet >= 1_000_000)
-    .sort((a, b) => b.omzet - a.omzet)
+    .filter((s) => !s.ranAds && s.cvr >= 1 && s.dilihat >= 100 && s.dilihat < 5000)
+    .sort((a, b) => b.cvr - a.cvr)
   if (noAds.length > 0) {
     recs.push({
       level: 'medium',
       title: `${noAds.length} produk potensial belum diiklankan`,
-      detail: `CTR organic bagus, mulai iklan: ${noAds.slice(0, 3).map((s) => trim(s.produkName)).join('; ')}`,
+      detail: `CVR tinggi tapi traffic masih rendah — kandidat untuk di-boost via iklan: ${noAds
+        .slice(0, 3)
+        .map((s) => trim(s.produkName))
+        .join('; ')}`,
       items: noAds.map((s) => ({
         name: s.produkName,
-        metric: `CTR ${s.ctr.toFixed(2)}%`,
-        sub: `Omzet ${formatIDR(s.omzet)} · Stok ${formatNum(s.totalStock)}`,
+        metric: `CVR ${s.cvr.toFixed(2)}%`,
+        sub: `Dilihat ${formatNum(s.dilihat)} · Omzet ${formatIDR(s.omzet)} · Stok ${formatNum(s.totalStock)}`,
       })),
     })
   }
