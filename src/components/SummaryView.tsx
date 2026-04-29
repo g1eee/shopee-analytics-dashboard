@@ -58,6 +58,7 @@ interface Props {
 const AD_TYPE_COLORS: Record<string, string> = {
   'GMV Max': '#a78bfa',
   'Iklan Produk': '#60a5fa',
+  'Iklan Toko': '#22d3ee',
   Manual: '#34d399',
   Other: '#f59e0b',
 }
