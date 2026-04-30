@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CopyButton } from './CopyButton'
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -854,6 +855,7 @@ function RecommendationDetailDialog({
                   <p className="text-sm text-white break-words">{it.name}</p>
                   {it.sub && <p className="text-[11px] text-muted mt-0.5">{it.sub}</p>}
                 </div>
+                <CopyButton value={it.name} size="md" />
                 {it.metric && (
                   <span className="text-sm font-semibold text-white shrink-0">{it.metric}</span>
                 )}
@@ -928,6 +930,7 @@ function RankCard({
                 </p>
                 <p className="text-[11px] text-muted truncate">{r.secondary}</p>
               </div>
+              <CopyButton value={r.primary} />
               <span className={'text-sm font-semibold shrink-0 ' + (r.metricColor ?? 'text-white')}>
                 {r.metric}
               </span>
@@ -975,6 +978,7 @@ function ActionList({ title, subtitle, items, empty, tone, renderMetric, renderS
                 </div>
                 <div className="mt-0.5">{renderSub(s)}</div>
               </div>
+              <CopyButton value={s.produkName} className="mt-0.5" />
               <div className="text-right shrink-0">{renderMetric(s)}</div>
             </li>
           ))
