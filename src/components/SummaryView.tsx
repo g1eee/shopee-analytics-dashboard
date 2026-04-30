@@ -397,7 +397,7 @@ function ProdukTab({
         <KpiCard
           label="CTR Toko"
           value={formatPercent(kpi.ctrToko, 2)}
-          sublabel={`Klik ${formatNumber(kpi.totalKlik, { compact: true })} ÷ Halaman Dilihat`}
+          sublabel={`Klik ${formatNumber(kpi.totalKlik, { compact: true })} ÷ Impresi ${formatNumber(kpi.totalImpressions, { compact: true })}`}
           icon={<MousePointerClick className="h-4 w-4" />}
           accent="sky"
           delta={deltaForKpi(kpi, prevKpi, 'ctrToko')}
