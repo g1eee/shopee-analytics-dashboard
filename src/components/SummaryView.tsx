@@ -314,9 +314,8 @@ function GlobalTab({
           rows={[
             { label: 'Halaman Dilihat', value: formatNumber(kpi.totalDilihat, { compact: true }) },
             { label: 'Pengunjung', value: formatNumber(kpi.totalPengunjung, { compact: true }) },
-            { label: 'Pengunjung ATC', value: formatNumber(kpi.totalPengunjungAtc, { compact: true }) },
             { label: 'Add to Cart', value: formatNumber(kpi.totalAtc, { compact: true }) },
-            { label: 'Pesanan', value: formatNumber(kpi.pesanan, { compact: true }) },
+            { label: 'Pesanan Siap Dikirim', value: formatNumber(kpi.pesanan, { compact: true }) },
           ]}
         />
         <SnapshotCard
@@ -328,9 +327,9 @@ function GlobalTab({
               : null
           }
           rows={[
-            { label: 'Visit Rate', value: formatPercent(kpi.ctrToko, 2) },
+            { label: 'CTR', value: formatPercent(kpi.ctrToko, 2) },
+            { label: 'CVR ATC', value: formatPercent(kpi.atcRateToko, 2) },
             { label: 'CVR', value: formatPercent(kpi.cvrToko, 2) },
-            { label: 'ATC Rate', value: formatPercent(kpi.atcRateToko, 2) },
             { label: 'AOV', value: formatRupiah(kpi.aov, { compact: true }) },
           ]}
         />
@@ -396,9 +395,9 @@ function ProdukTab({
           delta={deltaForKpi(kpi, prevKpi, 'totalAtc')}
         />
         <KpiCard
-          label="Visit Rate"
+          label="CTR Toko"
           value={formatPercent(kpi.ctrToko, 2)}
-          sublabel={`Pengunjung ÷ Halaman Dilihat`}
+          sublabel={`Klik ${formatNumber(kpi.totalKlik, { compact: true })} ÷ Halaman Dilihat`}
           icon={<MousePointerClick className="h-4 w-4" />}
           accent="sky"
           delta={deltaForKpi(kpi, prevKpi, 'ctrToko')}
@@ -418,7 +417,6 @@ function ProdukTab({
           <FunnelChart
             halaman={kpi.totalDilihat}
             visitor={kpi.totalPengunjung}
-            visitorAtc={kpi.totalPengunjungAtc}
             addToCart={kpi.totalAtc}
             order={kpi.pesanan}
           />

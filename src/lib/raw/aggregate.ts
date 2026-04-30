@@ -41,9 +41,10 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
     omzet,
     pesanan,
     aov: pesanan > 0 ? omzet / pesanan : 0,
-    // Page-level rates (match Shopee dashboard)
-    ctrToko: dilihat > 0 ? (pengunjung / dilihat) * 100 : 0,           // visit rate (Pengunjung/Halaman)
-    cvrToko: pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0,        // order rate (Pesanan/Pengunjung)
+    // CTR Toko = Produk Diklik / Halaman Produk Dilihat (klik per page-view)
+    ctrToko: dilihat > 0 ? (klik / dilihat) * 100 : 0,
+    // CVR Toko = Pesanan Siap Dikirim / Pengunjung Produk
+    cvrToko: pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0,
     adSpend,
     roas: adSpend > 0 ? adOmzet / adSpend : 0,
     acos: adOmzet > 0 ? (adSpend / adOmzet) * 100 : 0,
