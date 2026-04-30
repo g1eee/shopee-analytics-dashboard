@@ -64,9 +64,12 @@ export function generateRawSample(): RawDataset {
   for (let i = 0; i < SKU_NAMES.length; i++) {
     const kode = String(10000000000 + i * 137 + randInt(1, 999))
     const produkName = SKU_NAMES[i] + (i % 3 === 0 ? ' Black/Tan' : i % 3 === 1 ? ' Premium' : '')
-    const dilihat = randInt(15_000, 350_000)
-    const klik = Math.floor(dilihat * (0.02 + rand() * 0.04))
+    const dilihat = randInt(15_000, 350_000) // Jumlah Produk Dilihat (impressions)
+    const klik = Math.floor(dilihat * (0.02 + rand() * 0.04)) // Produk Diklik (broad clicks)
     const ctr = klik / dilihat
+    // Page-level: Halaman ~ klik (each click \u2248 page view, with some refresh inflation)
+    const halamanProdukDilihat = Math.floor(klik * (1.6 + rand() * 1.0))
+    const klikPencarian = Math.floor(klik * (0.15 + rand() * 0.15))
     const pesanan = Math.floor(klik * (0.003 + rand() * 0.012))
     const cvr = klik > 0 ? pesanan / klik : 0
     const aov = randInt(120_000, 5_500_000)
@@ -74,8 +77,9 @@ export function generateRawSample(): RawDataset {
     const pesananDibuat = Math.round(pesanan * (1.05 + rand() * 0.25))
     const omzetDibuat = Math.round(omzet * (1.05 + rand() * 0.3))
 
-    const pengunjungKunjungan = Math.floor(dilihat * (0.55 + rand() * 0.15))
-    const ditambahKeKeranjang = Math.floor(klik * (0.18 + rand() * 0.15))
+    // Pengunjung Produk (unique visitors) \u2248 28-40% of page views, matches Shopee dashboard
+    const pengunjungKunjungan = Math.floor(halamanProdukDilihat * (0.28 + rand() * 0.12))
+    const ditambahKeKeranjang = Math.floor(pengunjungKunjungan * (0.18 + rand() * 0.15))
     const pengunjungAtc = Math.floor(ditambahKeKeranjang * (0.7 + rand() * 0.2))
     const atcRate = pengunjungKunjungan > 0 ? pengunjungAtc / pengunjungKunjungan : 0
     ds.produk!.push({
@@ -88,7 +92,9 @@ export function generateRawSample(): RawDataset {
       totalPenjualanDibuat: omzetDibuat,
       penjualanSiapDikirim: omzet,
       jumlahProdukDilihat: dilihat,
+      halamanProdukDilihat,
       produkDiklik: klik,
+      klikPencarian,
       ctr,
       cvrSiapDikirim: cvr,
       cvrDibuat: cvr * (1.05 + rand() * 0.2),
