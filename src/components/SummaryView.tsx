@@ -312,9 +312,9 @@ function GlobalTab({
               : null
           }
           rows={[
-            { label: 'Halaman Dilihat', value: formatNumber(kpi.totalDilihat, { compact: true }) },
-            { label: 'Pengunjung', value: formatNumber(kpi.totalPengunjung, { compact: true }) },
-            { label: 'Add to Cart', value: formatNumber(kpi.totalAtc, { compact: true }) },
+            { label: 'Jumlah Produk Dilihat', value: formatNumber(kpi.totalDilihat, { compact: true }) },
+            { label: 'Produk Diklik', value: formatNumber(kpi.totalKlik, { compact: true }) },
+            { label: 'Add to Cart', value: formatNumber(kpi.totalPengunjungAtc, { compact: true }) },
             { label: 'Pesanan Siap Dikirim', value: formatNumber(kpi.pesanan, { compact: true }) },
           ]}
         />
@@ -379,25 +379,25 @@ function ProdukTab({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard
-          label="Halaman Dilihat"
+          label="Jumlah Produk Dilihat"
           value={formatNumber(kpi.totalDilihat, { compact: true })}
-          sublabel={`Pengunjung ${formatNumber(kpi.totalPengunjung, { compact: true })}`}
+          sublabel={`Klik ${formatNumber(kpi.totalKlik, { compact: true })}`}
           icon={<Eye className="h-4 w-4" />}
           accent="violet"
           delta={deltaForKpi(kpi, prevKpi, 'totalDilihat')}
         />
         <KpiCard
           label="Add to Cart"
-          value={formatNumber(kpi.totalAtc, { compact: true })}
-          sublabel={`ATC Rate ${formatPercent(kpi.atcRateToko, 2)}`}
+          value={formatNumber(kpi.totalPengunjungAtc, { compact: true })}
+          sublabel={`CVR ATC ${formatPercent(kpi.atcRateToko, 2)}`}
           icon={<ShoppingCart className="h-4 w-4" />}
           accent="emerald"
-          delta={deltaForKpi(kpi, prevKpi, 'totalAtc')}
+          delta={deltaForKpi(kpi, prevKpi, 'totalPengunjungAtc')}
         />
         <KpiCard
           label="CTR Toko"
           value={formatPercent(kpi.ctrToko, 2)}
-          sublabel={`Klik ${formatNumber(kpi.totalKlik, { compact: true })} ÷ Impresi ${formatNumber(kpi.totalImpressions, { compact: true })}`}
+          sublabel={`Klik ÷ Jumlah Produk Dilihat`}
           icon={<MousePointerClick className="h-4 w-4" />}
           accent="sky"
           delta={deltaForKpi(kpi, prevKpi, 'ctrToko')}
@@ -405,7 +405,7 @@ function ProdukTab({
         <KpiCard
           label="CVR Toko"
           value={formatPercent(kpi.cvrToko, 2)}
-          sublabel={`Pesanan ${formatNumber(kpi.pesanan)} ÷ Pengunjung`}
+          sublabel={`Pesanan ${formatNumber(kpi.pesanan)} ÷ Klik`}
           icon={<Percent className="h-4 w-4" />}
           accent="amber"
           delta={deltaForKpi(kpi, prevKpi, 'cvrToko')}
@@ -415,9 +415,9 @@ function ProdukTab({
       <div className="grid lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2">
           <FunnelChart
-            halaman={kpi.totalDilihat}
-            visitor={kpi.totalPengunjung}
-            addToCart={kpi.totalAtc}
+            dilihat={kpi.totalDilihat}
+            klik={kpi.totalKlik}
+            addToCart={kpi.totalPengunjungAtc}
             order={kpi.pesanan}
           />
         </div>
