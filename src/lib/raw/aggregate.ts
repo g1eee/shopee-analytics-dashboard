@@ -41,9 +41,9 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
     omzet,
     pesanan,
     aov: pesanan > 0 ? omzet / pesanan : 0,
-    // CTR Toko = Produk Diklik / Halaman Produk Dilihat (klik per page-view)
-    ctrToko: dilihat > 0 ? (klik / dilihat) * 100 : 0,
-    // CVR Toko = Pesanan Siap Dikirim / Pengunjung Produk
+    // CTR Toko = Produk Diklik / Jumlah Produk Dilihat (klik per impression — standar Shopee "Persentase Klik")
+    ctrToko: impressions > 0 ? (klik / impressions) * 100 : 0,
+    // CVR Toko = Pesanan Siap Dikirim / Pengunjung Produk (order rate per visitor)
     cvrToko: pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0,
     adSpend,
     roas: adSpend > 0 ? adOmzet / adSpend : 0,
@@ -56,7 +56,8 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
     totalKlikPencarian: klikPencarian,                                  // Klik Pencarian (search only)
     totalAtc: atc,                                                      // ATC events
     totalPengunjungAtc: pengunjungAtc,                                  // visitors who ATC'd
-    atcRateToko: pengunjung > 0 ? (atc / pengunjung) * 100 : 0,
+    // CVR ATC (Tingkat Konversi ATC) = Pengunjung yg ATC / Pengunjung Produk — match Shopee dashboard
+    atcRateToko: pengunjung > 0 ? (pengunjungAtc / pengunjung) * 100 : 0,
     totalPengunjung: pengunjung,
     cpc: adKlik > 0 ? adSpend / adKlik : 0,
     adKlik,
