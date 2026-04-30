@@ -9,7 +9,6 @@ interface FunnelStep {
 interface FunnelChartProps {
   halaman: number
   visitor: number
-  visitorAtc: number
   addToCart: number
   order: number
 }
@@ -17,29 +16,27 @@ interface FunnelChartProps {
 export function FunnelChart({
   halaman,
   visitor,
-  visitorAtc,
   addToCart,
   order,
 }: FunnelChartProps) {
   const steps: FunnelStep[] = [
     { label: 'Halaman Dilihat', value: halaman, color: '#a78bfa' },
     { label: 'Pengunjung', value: visitor, color: '#8b5cf6' },
-    { label: 'Pengunjung ATC', value: visitorAtc, color: '#60a5fa' },
     { label: 'Add to Cart', value: addToCart, color: '#34d399' },
-    { label: 'Pesanan', value: order, color: '#fbbf24' },
+    { label: 'Pesanan Siap Dikirim', value: order, color: '#fbbf24' },
   ]
   const max = Math.max(...steps.map((s) => s.value), 1)
 
   return (
     <div className="card p-5">
       <h3 className="text-sm font-semibold text-white">Conversion Funnel</h3>
-      <p className="text-xs text-muted">Halaman Produk Dilihat → Pengunjung → ATC → Pesanan. Selaras dengan Shopee Dashboard.</p>
+      <p className="text-xs text-muted">Halaman Dilihat → Pengunjung → Add to Cart → Pesanan Siap Dikirim. Selaras dengan Shopee Dashboard.</p>
       <div className="mt-4 flex flex-col gap-2">
         {steps.map((s, i) => {
           const ratio = s.value / max
           const conv = i === 0 ? 1 : safeDivide(s.value, steps[i - 1].value)
           return (
-            <div key={s.label} className="grid grid-cols-[110px_1fr_120px] items-center gap-3">
+            <div key={s.label} className="grid grid-cols-[140px_1fr_140px] items-center gap-3">
               <span className="text-xs text-muted">{s.label}</span>
               <div className="relative h-7 rounded-lg bg-bg-elev overflow-hidden border border-border">
                 <div
