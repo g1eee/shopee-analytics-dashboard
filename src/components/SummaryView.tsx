@@ -77,10 +77,10 @@ export function SummaryView({ ds, prevDs }: Props) {
   const staleNoFunnel = useMemo(() => {
     const parents = (ds.produk ?? []).filter((p) => p.isParent)
     if (parents.length === 0) return false
-    const hasViews = parents.some((p) => (p.jumlahProdukDilihat ?? 0) > 0)
+    const hasImpressions = parents.some((p) => (p.jumlahProdukDilihat ?? 0) > 0)
     const hasVisitors = parents.some((p) => (p.pengunjungKunjungan ?? 0) > 0)
     const hasAtc = parents.some((p) => (p.ditambahKeKeranjang ?? 0) > 0)
-    return hasViews && !hasVisitors && !hasAtc
+    return hasImpressions && !hasVisitors && !hasAtc
   }, [ds])
 
   // Which file types are present in this dataset?
@@ -312,9 +312,9 @@ function GlobalTab({
               : null
           }
           rows={[
-            { label: 'Tampilan', value: formatNumber(kpi.totalDilihat, { compact: true }) },
+            { label: 'Halaman Dilihat', value: formatNumber(kpi.totalDilihat, { compact: true }) },
             { label: 'Pengunjung', value: formatNumber(kpi.totalPengunjung, { compact: true }) },
-            { label: 'Klik', value: formatNumber(kpi.totalKlik, { compact: true }) },
+            { label: 'Pengunjung ATC', value: formatNumber(kpi.totalPengunjungAtc, { compact: true }) },
             { label: 'Add to Cart', value: formatNumber(kpi.totalAtc, { compact: true }) },
             { label: 'Pesanan', value: formatNumber(kpi.pesanan, { compact: true }) },
           ]}
@@ -328,7 +328,7 @@ function GlobalTab({
               : null
           }
           rows={[
-            { label: 'CTR', value: formatPercent(kpi.ctrToko, 2) },
+            { label: 'Visit Rate', value: formatPercent(kpi.ctrToko, 2) },
             { label: 'CVR', value: formatPercent(kpi.cvrToko, 2) },
             { label: 'ATC Rate', value: formatPercent(kpi.atcRateToko, 2) },
             { label: 'AOV', value: formatRupiah(kpi.aov, { compact: true }) },
@@ -380,7 +380,7 @@ function ProdukTab({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard
-          label="Tampilan Produk"
+          label="Halaman Dilihat"
           value={formatNumber(kpi.totalDilihat, { compact: true })}
           sublabel={`Pengunjung ${formatNumber(kpi.totalPengunjung, { compact: true })}`}
           icon={<Eye className="h-4 w-4" />}
@@ -396,9 +396,9 @@ function ProdukTab({
           delta={deltaForKpi(kpi, prevKpi, 'totalAtc')}
         />
         <KpiCard
-          label="CTR Toko"
+          label="Visit Rate"
           value={formatPercent(kpi.ctrToko, 2)}
-          sublabel={`Klik ${formatNumber(kpi.totalKlik, { compact: true })} ÷ Tampilan`}
+          sublabel={`Pengunjung ÷ Halaman Dilihat`}
           icon={<MousePointerClick className="h-4 w-4" />}
           accent="sky"
           delta={deltaForKpi(kpi, prevKpi, 'ctrToko')}
@@ -406,7 +406,7 @@ function ProdukTab({
         <KpiCard
           label="CVR Toko"
           value={formatPercent(kpi.cvrToko, 2)}
-          sublabel={`Pesanan ${formatNumber(kpi.pesanan)} ÷ Klik`}
+          sublabel={`Pesanan ${formatNumber(kpi.pesanan)} ÷ Pengunjung`}
           icon={<Percent className="h-4 w-4" />}
           accent="amber"
           delta={deltaForKpi(kpi, prevKpi, 'cvrToko')}
@@ -416,9 +416,9 @@ function ProdukTab({
       <div className="grid lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2">
           <FunnelChart
-            impression={kpi.totalDilihat}
+            halaman={kpi.totalDilihat}
             visitor={kpi.totalPengunjung}
-            click={kpi.totalKlik}
+            visitorAtc={kpi.totalPengunjungAtc}
             addToCart={kpi.totalAtc}
             order={kpi.pesanan}
           />

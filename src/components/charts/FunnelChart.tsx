@@ -7,33 +7,33 @@ interface FunnelStep {
 }
 
 interface FunnelChartProps {
-  impression: number
+  halaman: number
   visitor: number
-  click: number
+  visitorAtc: number
   addToCart: number
   order: number
 }
 
 export function FunnelChart({
-  impression,
+  halaman,
   visitor,
-  click,
+  visitorAtc,
   addToCart,
   order,
 }: FunnelChartProps) {
   const steps: FunnelStep[] = [
-    { label: 'Impression', value: impression, color: '#a78bfa' },
-    { label: 'Visitor', value: visitor, color: '#8b5cf6' },
-    { label: 'Click', value: click, color: '#60a5fa' },
+    { label: 'Halaman Dilihat', value: halaman, color: '#a78bfa' },
+    { label: 'Pengunjung', value: visitor, color: '#8b5cf6' },
+    { label: 'Pengunjung ATC', value: visitorAtc, color: '#60a5fa' },
     { label: 'Add to Cart', value: addToCart, color: '#34d399' },
-    { label: 'Order', value: order, color: '#fbbf24' },
+    { label: 'Pesanan', value: order, color: '#fbbf24' },
   ]
   const max = Math.max(...steps.map((s) => s.value), 1)
 
   return (
     <div className="card p-5">
       <h3 className="text-sm font-semibold text-white">Conversion Funnel</h3>
-      <p className="text-xs text-muted">Impression → Order. Konversi rate antar tahap.</p>
+      <p className="text-xs text-muted">Halaman Produk Dilihat → Pengunjung → ATC → Pesanan. Selaras dengan Shopee Dashboard.</p>
       <div className="mt-4 flex flex-col gap-2">
         {steps.map((s, i) => {
           const ratio = s.value / max

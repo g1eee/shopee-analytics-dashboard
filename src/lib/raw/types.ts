@@ -10,8 +10,10 @@ export interface ProdukRow {
   isParent: boolean
   totalPenjualanDibuat: number       // Total Penjualan (Pesanan Dibuat) IDR
   penjualanSiapDikirim: number       // Penjualan (Pesanan Siap Dikirim) IDR
-  jumlahProdukDilihat: number
-  produkDiklik: number
+  jumlahProdukDilihat: number         // Jumlah Produk Dilihat (impressions in feed/search/ads, BROAD)
+  halamanProdukDilihat: number        // Halaman Produk Dilihat (page detail views — matches Shopee dashboard "Halaman Produk Dilihat")
+  produkDiklik: number                // Produk Diklik (broad clicks)
+  klikPencarian: number               // Klik Pencarian (clicks from search source only — matches Shopee dashboard)
   ctr: number                         // Persentase Klik (decimal e.g. 0.0442)
   cvrSiapDikirim: number              // Tingkat Konversi (Pesanan Siap Dikirim) decimal
   cvrDibuat: number
@@ -98,19 +100,23 @@ export interface SummaryKpi {
   omzet: number                       // Penjualan Pesanan Siap Dikirim
   pesanan: number                     // Pesanan Siap Dikirim
   aov: number                         // omzet / pesanan
-  ctrToko: number                     // % (sum click / sum dilihat) * 100
-  cvrToko: number                     // % (sum order / sum click) * 100
+  // Page-level funnel rates (match Shopee dashboard semantics)
+  ctrToko: number                     // % Pengunjung / Halaman Dilihat (visit rate, page → unique visitor)
+  cvrToko: number                     // % Pesanan / Pengunjung (order rate per visitor)
   adSpend: number
   roas: number                        // omzet from ads / spend (blended)
   acos: number                        // spend / omzet from ads * 100
   totalSku: number
   outOfStockSku: number
-  // Funnel
-  totalDilihat: number                // total impressions / Jumlah Produk Dilihat
-  totalKlik: number                   // total Produk Diklik
-  totalAtc: number                    // total Dimasukkan ke Keranjang
-  atcRateToko: number                 // %  ATC / Pengunjung
-  totalPengunjung: number             // total Pengunjung Produk (Kunjungan)
+  // Funnel — page-level (matches Shopee dashboard "Halaman Produk Dilihat" / "Pengunjung Produk")
+  totalDilihat: number                // sum Halaman Produk Dilihat (page views)
+  totalKlik: number                   // sum Produk Diklik (broad — kept for marketing CTR/SkuRow)
+  totalKlikPencarian: number          // sum Klik Pencarian (search clicks — matches Shopee dashboard)
+  totalImpressions: number            // sum Jumlah Produk Dilihat (impressions, broad)
+  totalAtc: number                    // sum Dimasukkan ke Keranjang (ATC events)
+  totalPengunjungAtc: number          // sum Pengunjung Produk yg ATC (unique visitors who added)
+  atcRateToko: number                 // % ATC events / Pengunjung
+  totalPengunjung: number             // sum Pengunjung Produk (Kunjungan)
   // Ads-only
   cpc: number                         // adSpend / totalKlik (ad clicks)
   adKlik: number                      // sum klik dari ads CSV

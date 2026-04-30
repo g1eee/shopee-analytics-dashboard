@@ -14,10 +14,18 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
   const parents = (ds.produk ?? []).filter((p) => p.isParent)
   const omzet = sum(parents.map((p) => p.penjualanSiapDikirim))
   const pesanan = sum(parents.map((p) => p.pesananSiapDikirim))
-  const dilihat = sum(parents.map((p) => p.jumlahProdukDilihat))
-  const klik = sum(parents.map((p) => p.produkDiklik))
-  const atc = sum(parents.map((p) => p.ditambahKeKeranjang))
+  // Page-level metrics (match Shopee dashboard)
+  const halamanDilihat = sum(parents.map((p) => p.halamanProdukDilihat ?? 0))
   const pengunjung = sum(parents.map((p) => p.pengunjungKunjungan))
+  const pengunjungAtc = sum(parents.map((p) => p.pengunjungAtc ?? 0))
+  const atc = sum(parents.map((p) => p.ditambahKeKeranjang))
+  // Marketing-level metrics (impressions, clicks — broader, includes ads/feed/search)
+  const impressions = sum(parents.map((p) => p.jumlahProdukDilihat))
+  const klik = sum(parents.map((p) => p.produkDiklik))
+  const klikPencarian = sum(parents.map((p) => p.klikPencarian ?? 0))
+  // Backward-compat aliases for downstream consumers (older datasets without page-level fields
+  // fall back to broad impressions/clicks so dashboards still show numbers)
+  const dilihat = halamanDilihat > 0 ? halamanDilihat : impressions
 
   const ads = ds.ads ?? []
   const adSpend = sum(ads.map((a) => a.biaya))
@@ -33,16 +41,20 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
     omzet,
     pesanan,
     aov: pesanan > 0 ? omzet / pesanan : 0,
-    ctrToko: dilihat > 0 ? (klik / dilihat) * 100 : 0,
-    cvrToko: klik > 0 ? (pesanan / klik) * 100 : 0,
+    // Page-level rates (match Shopee dashboard)
+    ctrToko: dilihat > 0 ? (pengunjung / dilihat) * 100 : 0,           // visit rate (Pengunjung/Halaman)
+    cvrToko: pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0,        // order rate (Pesanan/Pengunjung)
     adSpend,
     roas: adSpend > 0 ? adOmzet / adSpend : 0,
     acos: adOmzet > 0 ? (adSpend / adOmzet) * 100 : 0,
     totalSku,
     outOfStockSku,
-    totalDilihat: dilihat,
-    totalKlik: klik,
-    totalAtc: atc,
+    totalDilihat: dilihat,                                              // Halaman Produk Dilihat (page views)
+    totalImpressions: impressions,                                      // Jumlah Produk Dilihat (impressions)
+    totalKlik: klik,                                                    // Produk Diklik (broad)
+    totalKlikPencarian: klikPencarian,                                  // Klik Pencarian (search only)
+    totalAtc: atc,                                                      // ATC events
+    totalPengunjungAtc: pengunjungAtc,                                  // visitors who ATC'd
     atcRateToko: pengunjung > 0 ? (atc / pengunjung) * 100 : 0,
     totalPengunjung: pengunjung,
     cpc: adKlik > 0 ? adSpend / adKlik : 0,
@@ -110,7 +122,10 @@ export function joinSkus(ds: RawDataset): SkuRow[] {
     const s = stockByKode.get(kode)
     const omzet = p?.penjualanSiapDikirim ?? 0
     const pesanan = p?.pesananSiapDikirim ?? 0
-    const dilihat = p?.jumlahProdukDilihat ?? 0
+    // Prefer page-level views (matches Shopee dashboard); fall back to impressions for older datasets
+    const halaman = p?.halamanProdukDilihat ?? 0
+    const impressions = p?.jumlahProdukDilihat ?? 0
+    const dilihat = halaman > 0 ? halaman : impressions
     const klik = p?.produkDiklik ?? 0
     const atc = p?.ditambahKeKeranjang ?? 0
     const ctr = (p?.ctr ?? 0) * 100
