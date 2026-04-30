@@ -14,18 +14,14 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
   const parents = (ds.produk ?? []).filter((p) => p.isParent)
   const omzet = sum(parents.map((p) => p.penjualanSiapDikirim))
   const pesanan = sum(parents.map((p) => p.pesananSiapDikirim))
-  // Page-level metrics (match Shopee dashboard)
-  const halamanDilihat = sum(parents.map((p) => p.halamanProdukDilihat ?? 0))
-  const pengunjung = sum(parents.map((p) => p.pengunjungKunjungan))
-  const pengunjungAtc = sum(parents.map((p) => p.pengunjungAtc ?? 0))
-  const atc = sum(parents.map((p) => p.ditambahKeKeranjang))
-  // Marketing-level metrics (impressions, clicks — broader, includes ads/feed/search)
-  const impressions = sum(parents.map((p) => p.jumlahProdukDilihat))
-  const klik = sum(parents.map((p) => p.produkDiklik))
-  const klikPencarian = sum(parents.map((p) => p.klikPencarian ?? 0))
-  // Backward-compat aliases for downstream consumers (older datasets without page-level fields
-  // fall back to broad impressions/clicks so dashboards still show numbers)
-  const dilihat = halamanDilihat > 0 ? halamanDilihat : impressions
+  // Funnel metrics (sesuai user spec — semua di-sum dari kolom file parentskudetail*.xlsx)
+  const impressions = sum(parents.map((p) => p.jumlahProdukDilihat))            // col K — Jumlah Produk Dilihat
+  const klik = sum(parents.map((p) => p.produkDiklik))                          // col L — Produk Diklik
+  const pengunjungAtc = sum(parents.map((p) => p.pengunjungAtc ?? 0))           // col AH — Pengunjung Produk yang ATC
+  // Tambahan untuk konteks (tidak dipakai di funnel utama tapi tersedia di dataset detail)
+  const pengunjung = sum(parents.map((p) => p.pengunjungKunjungan))             // col AB — Pengunjung Produk Kunjungan
+  const atc = sum(parents.map((p) => p.ditambahKeKeranjang))                    // col AI — Dimasukkan ke Keranjang (events)
+  const klikPencarian = sum(parents.map((p) => p.klikPencarian ?? 0))           // col AF — Klik Pencarian
 
   const ads = ds.ads ?? []
   const adSpend = sum(ads.map((a) => a.biaya))
@@ -41,23 +37,23 @@ export function summaryKpi(ds: RawDataset): SummaryKpi {
     omzet,
     pesanan,
     aov: pesanan > 0 ? omzet / pesanan : 0,
-    // CTR Toko = Produk Diklik / Jumlah Produk Dilihat (klik per impression — standar Shopee "Persentase Klik")
+    // CTR = Produk Diklik / Jumlah Produk Dilihat (col L / col K) — Shopee "Persentase Klik"
     ctrToko: impressions > 0 ? (klik / impressions) * 100 : 0,
-    // CVR Toko = Pesanan Siap Dikirim / Pengunjung Produk (order rate per visitor)
-    cvrToko: pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0,
+    // CVR Toko = Pesanan Siap Dikirim / Produk Diklik (col Q / col L) — click-to-order rate
+    cvrToko: klik > 0 ? (pesanan / klik) * 100 : 0,
     adSpend,
     roas: adSpend > 0 ? adOmzet / adSpend : 0,
     acos: adOmzet > 0 ? (adSpend / adOmzet) * 100 : 0,
     totalSku,
     outOfStockSku,
-    totalDilihat: dilihat,                                              // Halaman Produk Dilihat (page views)
+    totalDilihat: impressions,                                          // Jumlah Produk Dilihat (col K) — funnel top
     totalImpressions: impressions,                                      // Jumlah Produk Dilihat (impressions)
     totalKlik: klik,                                                    // Produk Diklik (broad)
     totalKlikPencarian: klikPencarian,                                  // Klik Pencarian (search only)
     totalAtc: atc,                                                      // ATC events
     totalPengunjungAtc: pengunjungAtc,                                  // visitors who ATC'd
-    // CVR ATC (Tingkat Konversi ATC) = Pengunjung yg ATC / Pengunjung Produk — match Shopee dashboard
-    atcRateToko: pengunjung > 0 ? (pengunjungAtc / pengunjung) * 100 : 0,
+    // CVR ATC = Pengunjung yg ATC / Produk Diklik (col AH / col L) — click-to-cart rate
+    atcRateToko: klik > 0 ? (pengunjungAtc / klik) * 100 : 0,
     totalPengunjung: pengunjung,
     cpc: adKlik > 0 ? adSpend / adKlik : 0,
     adKlik,
