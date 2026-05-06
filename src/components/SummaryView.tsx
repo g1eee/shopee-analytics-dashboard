@@ -313,10 +313,10 @@ function GlobalTab({
               : null
           }
           rows={[
-            { label: 'Jumlah Produk Dilihat', value: formatNumber(kpi.totalDilihat, { compact: true }) },
-            { label: 'Produk Diklik', value: formatNumber(kpi.totalKlik, { compact: true }) },
-            { label: 'Add to Cart', value: formatNumber(kpi.totalPengunjungAtc, { compact: true }) },
-            { label: 'Pesanan Siap Dikirim', value: formatNumber(kpi.pesanan, { compact: true }) },
+            { label: 'Jumlah Produk Dilihat', value: formatNumber(kpi.totalDilihat, { compact: true }), delta: deltaPct(kpi.totalDilihat, prevKpi?.totalDilihat) },
+            { label: 'Produk Diklik', value: formatNumber(kpi.totalKlik, { compact: true }), delta: deltaPct(kpi.totalKlik, prevKpi?.totalKlik) },
+            { label: 'Add to Cart', value: formatNumber(kpi.totalPengunjungAtc, { compact: true }), delta: deltaPct(kpi.totalPengunjungAtc, prevKpi?.totalPengunjungAtc) },
+            { label: 'Pesanan Siap Dikirim', value: formatNumber(kpi.pesanan, { compact: true }), delta: deltaPct(kpi.pesanan, prevKpi?.pesanan) },
           ]}
         />
         <SnapshotCard
@@ -328,10 +328,10 @@ function GlobalTab({
               : null
           }
           rows={[
-            { label: 'CTR', value: formatPercent(kpi.ctrToko, 2) },
-            { label: 'CVR ATC', value: formatPercent(kpi.atcRateToko, 2) },
-            { label: 'CVR', value: formatPercent(kpi.cvrToko, 2) },
-            { label: 'AOV', value: formatRupiah(kpi.aov, { compact: true }) },
+            { label: 'CTR', value: formatPercent(kpi.ctrToko, 2), delta: deltaPct(kpi.ctrToko, prevKpi?.ctrToko) },
+            { label: 'CVR ATC', value: formatPercent(kpi.atcRateToko, 2), delta: deltaPct(kpi.atcRateToko, prevKpi?.atcRateToko) },
+            { label: 'CVR', value: formatPercent(kpi.cvrToko, 2), delta: deltaPct(kpi.cvrToko, prevKpi?.cvrToko) },
+            { label: 'AOV', value: formatRupiah(kpi.aov, { compact: true }), delta: deltaPct(kpi.aov, prevKpi?.aov) },
           ]}
         />
         <SnapshotCard
@@ -868,6 +868,12 @@ function RecommendationDetailDialog({
   )
 }
 
+interface SnapshotRow {
+  label: string
+  value: string
+  delta?: number | null  // percentage change vs previous period; sign-flipped for inverse metrics
+}
+
 function SnapshotCard({
   icon,
   title,
@@ -876,7 +882,7 @@ function SnapshotCard({
 }: {
   icon: React.ReactNode
   title: string
-  rows: { label: string; value: string }[]
+  rows: SnapshotRow[]
   emptyMessage?: string | null
 }) {
   return (
@@ -890,14 +896,32 @@ function SnapshotCard({
       ) : (
         <dl className="mt-3 flex flex-col gap-1.5">
           {rows.map((r) => (
-            <div key={r.label} className="flex items-center justify-between text-sm">
+            <div key={r.label} className="flex items-center justify-between gap-2 text-sm">
               <dt className="text-muted">{r.label}</dt>
-              <dd className="text-white font-medium">{r.value}</dd>
+              <dd className="flex items-center gap-2">
+                <DeltaBadge value={r.delta} />
+                <span className="text-white font-medium">{r.value}</span>
+              </dd>
             </div>
           ))}
         </dl>
       )}
     </div>
+  )
+}
+
+function DeltaBadge({ value }: { value?: number | null }) {
+  if (value == null || !isFinite(value)) return null
+  const abs = Math.abs(value)
+  if (abs < 0.05) {
+    return <span className="text-[10px] text-muted px-1.5 py-0.5 rounded-md bg-bg-elev/60">—</span>
+  }
+  const up = value > 0
+  const color = up ? 'text-emerald-300 bg-emerald-500/10' : 'text-rose-300 bg-rose-500/10'
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md tabular-nums ${color}`} title="vs periode sebelumnya">
+      {up ? '▲' : '▼'} {abs.toFixed(1)}%
+    </span>
   )
 }
 
