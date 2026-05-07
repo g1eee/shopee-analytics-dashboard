@@ -144,6 +144,11 @@ export function addRawDataset(
 
   if (existingIdx >= 0 && state.datasets[existingIdx].id !== ds.id) {
     const existing = state.datasets[existingIdx]
+    // Treat empty arrays the same as missing — don't wipe out existing data when
+    // a parser returns an empty slice (e.g. user dropped a wrong-format file or
+    // a parser warning silently produced an empty array).
+    const pickArr = <T,>(incoming: T[] | undefined, current: T[] | undefined): T[] | undefined =>
+      incoming && incoming.length > 0 ? incoming : current
     const merged: RawDataset = {
       ...existing,
       // Refresh display fields with whatever the new upload provided (fall back to old)
@@ -152,10 +157,10 @@ export function addRawDataset(
       uploadedAt: ds.uploadedAt,
       period: ds.period,
       cabangNames: ds.cabangNames ?? existing.cabangNames,
-      // Merge file-slices: new takes precedence ONLY when present
-      produk: ds.produk ?? existing.produk,
-      ads: ds.ads ?? existing.ads,
-      stock: ds.stock ?? existing.stock,
+      // Merge file-slices: new takes precedence only when it actually contains rows.
+      produk: pickArr(ds.produk, existing.produk),
+      ads: pickArr(ds.ads, existing.ads),
+      stock: pickArr(ds.stock, existing.stock),
     }
     const others = state.datasets.filter((_, i) => i !== existingIdx)
     datasets = [merged, ...others].slice(0, MAX_DATASETS)
