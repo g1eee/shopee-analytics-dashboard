@@ -1,5 +1,6 @@
 import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
 import type { RawDataset } from './types'
+import { periodKeyOf, samePeriod } from './period'
 
 const KEY = 'shopee-raw-state-v1'
 const MAX_DATASETS = 36
@@ -116,14 +117,57 @@ export function saveRawState(state: RawAppState) {
   saveRawStateSafe(state)
 }
 
+/**
+ * Adds (or merges) a dataset into state.
+ *
+ * Behavior:
+ *  - If an existing dataset matches the same (brand, period), the new payload is
+ *    merged INTO the existing record. Only file-slices that the new upload
+ *    actually contains (produk / ads / stock) overwrite the old ones; the rest
+ *    are preserved. This lets users top-up a partial dataset by uploading just
+ *    the missing file (e.g. only mass_update_sales_info.xlsx for stock) without
+ *    losing the previously-uploaded Performa Produk / Iklan files.
+ *  - Otherwise the dataset is added as a new entry (newest first, capped at
+ *    MAX_DATASETS, deduped by id).
+ */
 export function addRawDataset(
   state: RawAppState,
   ds: RawDataset,
 ): { state: RawAppState; result: SaveResult } {
-  // Newest first, capped, deduped by id (replace if same id re-uploaded)
-  const filtered = state.datasets.filter((d) => d.id !== ds.id)
-  const datasets = [ds, ...filtered].slice(0, MAX_DATASETS)
-  const next: RawAppState = { datasets, activeId: ds.id }
+  const incomingPeriod = periodKeyOf(ds)
+  const existingIdx = state.datasets.findIndex(
+    (d) => (d.brand || 'Tanpa Brand') === (ds.brand || 'Tanpa Brand') && samePeriod(periodKeyOf(d), incomingPeriod),
+  )
+
+  let datasets: RawDataset[]
+  let activeId: string
+
+  if (existingIdx >= 0 && state.datasets[existingIdx].id !== ds.id) {
+    const existing = state.datasets[existingIdx]
+    const merged: RawDataset = {
+      ...existing,
+      // Refresh display fields with whatever the new upload provided (fall back to old)
+      name: ds.name || existing.name,
+      storeName: ds.storeName ?? existing.storeName,
+      uploadedAt: ds.uploadedAt,
+      period: ds.period,
+      cabangNames: ds.cabangNames ?? existing.cabangNames,
+      // Merge file-slices: new takes precedence ONLY when present
+      produk: ds.produk ?? existing.produk,
+      ads: ds.ads ?? existing.ads,
+      stock: ds.stock ?? existing.stock,
+    }
+    const others = state.datasets.filter((_, i) => i !== existingIdx)
+    datasets = [merged, ...others].slice(0, MAX_DATASETS)
+    activeId = merged.id
+  } else {
+    // Newest first, capped, deduped by id (replace if same id re-uploaded)
+    const filtered = state.datasets.filter((d) => d.id !== ds.id)
+    datasets = [ds, ...filtered].slice(0, MAX_DATASETS)
+    activeId = ds.id
+  }
+
+  const next: RawAppState = { datasets, activeId }
   return saveRawStateSafe(next)
 }
 
