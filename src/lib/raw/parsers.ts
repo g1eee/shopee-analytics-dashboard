@@ -283,18 +283,23 @@ export async function parseStockXlsx(file: File): Promise<ParsedFile> {
   const sheetName = wb.SheetNames[0]
   const ws = wb.Sheets[sheetName]
   const arr = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: false })
-  // Find the human header row. Two valid Shopee export formats:
+  // Find the human header row. Three valid Shopee export formats:
   //  - Multi-cabang: contains "Kode Produk" + ≥1 column starting with "Stok:" (per-warehouse).
-  //  - Single warehouse: contains "Kode Produk" + a plain "Stok" column.
+  //  - Single warehouse (legacy): contains "Kode Produk" + a plain "Stok" column.
+  //  - Mass-update sales-info (newer): contains "Kode Produk" + "Stok Penjual" column
+  //    (sometimes preceded by a row of `et_title_*` template tokens at row 0).
+  const isStockCol = (c: unknown) => {
+    if (typeof c !== 'string') return false
+    if (/^Stok:/i.test(c)) return true
+    const n = normalize(c)
+    return n === 'stok' || n === 'stok penjual' || /^stok\b/.test(n)
+  }
   let headerRow = -1
   for (let i = 0; i < Math.min(10, arr.length); i++) {
     const r = (arr[i] as unknown[]) ?? []
     const hasKodeProduk = r.includes('Kode Produk')
     if (!hasKodeProduk) continue
-    const hasStokCol = r.some(
-      (c) => typeof c === 'string' && (/^Stok:/i.test(c) || normalize(c) === 'stok'),
-    )
-    if (hasStokCol) {
+    if (r.some(isStockCol)) {
       headerRow = i
       break
     }
@@ -307,9 +312,12 @@ export async function parseStockXlsx(file: File): Promise<ParsedFile> {
   headers.forEach((h, i) => {
     if (/^Stok:/i.test(h)) stokCols.push({ idx: i, name: h.replace(/^Stok:/i, '').trim() })
   })
-  // Single-warehouse fallback: no per-cabang columns, but a plain "Stok" column.
+  // Single-warehouse fallback: pick the first "Stok"-prefixed column (matches "Stok",
+  // "Stok Penjual", "Stok Gudang", etc.) when no per-cabang Stok: columns exist.
   if (stokCols.length === 0) {
-    const idx = headers.findIndex((h) => normalize(h) === 'stok')
+    const idx = headers.findIndex(
+      (h) => !/^Stok:/i.test(h) && (normalize(h) === 'stok' || /^stok\b/.test(normalize(h))),
+    )
     if (idx >= 0) stokCols.push({ idx, name: 'Toko' })
   }
   const findCol = (...names: string[]) => {
